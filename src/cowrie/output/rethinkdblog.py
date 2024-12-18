@@ -1,3 +1,4 @@
+from __future__ import annotations
 import time
 from datetime import datetime
 
@@ -15,7 +16,6 @@ RETHINK_DB_SEGMENT = "output_rethinkdblog"
 
 
 class Output(cowrie.core.output.Output):
-
     # noinspection PyAttributeOutsideInit
     def start(self):
         self.host = CowrieConfig.get(RETHINK_DB_SEGMENT, "host")
@@ -35,13 +35,13 @@ class Output(cowrie.core.output.Output):
     def stop(self):
         self.connection.close()
 
-    def write(self, logentry):
-        for i in list(logentry.keys()):
+    def write(self, event):
+        for i in list(event.keys()):
             # remove twisted 15 legacy keys
             if i.startswith("log_"):
-                del logentry[i]
+                del event[i]
 
-        if "timestamp" in logentry:
-            logentry["timestamp"] = iso8601_to_timestamp(logentry["timestamp"])
+        if "timestamp" in event:
+            event["timestamp"] = iso8601_to_timestamp(event["timestamp"])
 
-        r.table(self.table).insert(logentry).run(self.connection)
+        r.table(self.table).insert(event).run(self.connection)

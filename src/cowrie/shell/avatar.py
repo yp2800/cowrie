@@ -2,32 +2,35 @@
 # See the COPYRIGHT file for more information
 
 
+from __future__ import annotations
+
+from zope.interface import implementer
+
 from twisted.conch import avatar
 from twisted.conch.error import ConchError
-from twisted.conch.interfaces import IConchUser, ISFTPServer, ISession
+from twisted.conch.interfaces import IConchUser, ISession, ISFTPServer
 from twisted.conch.ssh import filetransfer as conchfiletransfer
 from twisted.conch.ssh.connection import OPEN_UNKNOWN_CHANNEL_TYPE
 from twisted.python import components, log
 
-from zope.interface import implementer
-
 from cowrie.core.config import CowrieConfig
-from cowrie.shell import filetransfer
-from cowrie.shell import pwd
+from cowrie.shell import filetransfer, pwd
 from cowrie.shell import session as shellsession
+from cowrie.shell import server
 from cowrie.ssh import forwarding
 from cowrie.ssh import session as sshsession
 
 
 @implementer(IConchUser)
 class CowrieUser(avatar.ConchUser):
-    def __init__(self, username, server):
+    def __init__(self, username: bytes, server: server.CowrieServer) -> None:
         avatar.ConchUser.__init__(self)
-        self.username = username.decode("utf-8")
+        self.username: str = username.decode("utf-8")
         self.server = server
 
         self.channelLookup[b"session"] = sshsession.HoneyPotSSHSession
 
+        self.temporary: bool
         try:
             pwentry = pwd.Passwd().getpwnam(self.username)
             self.temporary = False
@@ -45,11 +48,11 @@ class CowrieUser(avatar.ConchUser):
 
         # SSH forwarding disabled only when option is explicitly set
         if CowrieConfig.getboolean("ssh", "forwarding", fallback=True):
-            self.channelLookup[
-                b"direct-tcpip"
-            ] = forwarding.cowrieOpenConnectForwardingClient
+            self.channelLookup[b"direct-tcpip"] = (
+                forwarding.cowrieOpenConnectForwardingClient
+            )
 
-    def logout(self):
+    def logout(self) -> None:
         log.msg(f"avatar {self.username} logging out")
 
     def lookupChannel(self, channelType, windowSize, maxPacket, data):

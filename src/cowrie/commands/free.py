@@ -5,9 +5,10 @@
 This module ...
 """
 
+from __future__ import annotations
 
 import getopt
-from typing import Dict
+from math import floor
 
 from cowrie.shell.command import HoneyPotCommand
 
@@ -19,12 +20,12 @@ Swap:{SwapTotal:>14}{calc_swap_used:>12}{SwapFree:>12}
 """
 
 
-class command_free(HoneyPotCommand):
+class Command_free(HoneyPotCommand):
     """
     free
     """
 
-    def call(self):
+    def call(self) -> None:
         # Parse options or display no files
         try:
             opts, args = getopt.getopt(self.args, "mh")
@@ -33,7 +34,7 @@ class command_free(HoneyPotCommand):
             return
 
         # Parse options
-        for o, a in opts:
+        for o, _a in opts:
             if o in ("-h"):
                 self.do_free(fmt="human")
                 return
@@ -42,7 +43,7 @@ class command_free(HoneyPotCommand):
                 return
         self.do_free()
 
-    def do_free(self, fmt="kilobytes"):
+    def do_free(self, fmt: str = "kilobytes") -> None:
         """
         print free statistics
         """
@@ -63,25 +64,26 @@ class command_free(HoneyPotCommand):
             # Transform KB to MB
             for key, value in raw_mem_stats.items():
                 raw_mem_stats[key] = int(value / 1000)
-        elif fmt == "human":
+
+        if fmt == "human":
             magnitude = ["B", "M", "G", "T", "Z"]
-            for key, value in raw_mem_stats.iteritems():
+            human_mem_stats = {}
+            for key, value in raw_mem_stats.items():
                 current_magnitude = 0
 
                 # Keep dividing until we get a sane magnitude
                 while value >= 1000 and current_magnitude < len(magnitude):
-                    value = round(float(value / 1000), 1)
+                    value = floor(float(value / 1000))
                     current_magnitude += 1
 
                 # Format to string and append value with new magnitude
-                raw_mem_stats[key] = str(
-                    "{:g}{}".format(value, magnitude[current_magnitude])
-                )
+                human_mem_stats[key] = str(f"{value:g}{magnitude[current_magnitude]}")
 
-        # Write the output to screen
-        self.write(FREE_OUTPUT.format(**raw_mem_stats))
+            self.write(FREE_OUTPUT.format(**human_mem_stats))
+        else:
+            self.write(FREE_OUTPUT.format(**raw_mem_stats))
 
-    def get_free_stats(self) -> Dict[str, int]:
+    def get_free_stats(self) -> dict[str, int]:
         """
         Get the free stats from /proc
         """
@@ -95,7 +97,7 @@ class command_free(HoneyPotCommand):
             "Shmem",
             "MemAvailable",
         ]
-        mem_info_map: Dict[str, int] = {}
+        mem_info_map: dict[str, int] = {}
         with open("/proc/meminfo") as proc_file:
             for line in proc_file:
                 tokens = line.split(":")
@@ -108,5 +110,5 @@ class command_free(HoneyPotCommand):
         return mem_info_map
 
 
-commands["/usr/bin/free"] = command_free
-commands["free"] = command_free
+commands["/usr/bin/free"] = Command_free
+commands["free"] = Command_free

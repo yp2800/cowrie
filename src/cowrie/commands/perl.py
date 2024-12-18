@@ -5,6 +5,7 @@
 This module contains the perl command
 """
 
+from __future__ import annotations
 
 import getopt
 
@@ -15,8 +16,8 @@ from cowrie.shell.command import HoneyPotCommand
 commands = {}
 
 
-class command_perl(HoneyPotCommand):
-    def version(self):
+class Command_perl(HoneyPotCommand):
+    def version(self) -> None:
         output = (
             "",
             "This is perl 5, version 14, subversion 2 (v5.14.2) built for x86_64-linux-thread-multi",
@@ -34,7 +35,7 @@ class command_perl(HoneyPotCommand):
         for line in output:
             self.write(line + "\n")
 
-    def help(self):
+    def help(self) -> None:
         output = (
             "",
             "Usage: perl [switches] [--] [programfile] [arguments]",
@@ -71,7 +72,7 @@ class command_perl(HoneyPotCommand):
         for line in output:
             self.write(line + "\n")
 
-    def start(self):
+    def start(self) -> None:
         try:
             opts, args = getopt.gnu_getopt(
                 self.args, "acfhnpsStTuUvwWXC:D:e:E:F:i:I:l:m:M:V:X:"
@@ -81,9 +82,10 @@ class command_perl(HoneyPotCommand):
                 "Unrecognized switch: -" + err.opt + " (-h will show valid options).\n"
             )
             self.exit()
+            return
 
         # Parse options
-        for o, a in opts:
+        for o, _a in opts:
             if o in ("-v"):
                 self.version()
                 self.exit()
@@ -100,15 +102,14 @@ class command_perl(HoneyPotCommand):
                 self.exit()
             else:
                 self.write(
-                    'Can\'t open perl script "%s": No such file or directory\n'
-                    % (value)
+                    f'Can\'t open perl script "{value}": No such file or directory\n'
                 )
                 self.exit()
 
         if not len(self.args):
             pass
 
-    def lineReceived(self, line):
+    def lineReceived(self, line: str) -> None:
         log.msg(
             eventid="cowrie.command.input",
             realm="perl",
@@ -116,9 +117,9 @@ class command_perl(HoneyPotCommand):
             format="INPUT (%(realm)s): %(input)s",
         )
 
-    def handle_CTRL_D(self):
+    def handle_CTRL_D(self) -> None:
         self.exit()
 
 
-commands["/usr/bin/perl"] = command_perl
-commands["perl"] = command_perl
+commands["/usr/bin/perl"] = Command_perl
+commands["perl"] = Command_perl

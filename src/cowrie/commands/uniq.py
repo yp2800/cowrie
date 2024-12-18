@@ -5,11 +5,11 @@
 uniq command
 """
 
+from __future__ import annotations
 
 from twisted.python import log
 
 from cowrie.shell.command import HoneyPotCommand
-
 
 commands = {}
 
@@ -50,11 +50,10 @@ or available locally via: info '(coreutils) uniq invocation'
 """
 
 
-class command_uniq(HoneyPotCommand):
+class Command_uniq(HoneyPotCommand):
+    last_line: bytes | None = None
 
-    last_line = None
-
-    def start(self):
+    def start(self) -> None:
         if "--help" in self.args:
             self.writeBytes(UNIQ_HELP.encode())
             self.exit()
@@ -66,7 +65,7 @@ class command_uniq(HoneyPotCommand):
                 self.grep_input(line)
             self.exit()
 
-    def lineReceived(self, line):
+    def lineReceived(self, line: str) -> None:
         log.msg(
             eventid="cowrie.command.input",
             realm="uniq",
@@ -75,14 +74,14 @@ class command_uniq(HoneyPotCommand):
         )
         self.grep_input(line.encode())
 
-    def handle_CTRL_D(self):
+    def handle_CTRL_D(self) -> None:
         self.exit()
 
-    def grep_input(self, line):
+    def grep_input(self, line: bytes) -> None:
         if not line == self.last_line:
             self.writeBytes(line + b"\n")
             self.last_line = line
 
 
-commands["/usr/bin/uniq"] = command_uniq
-commands["uniq"] = command_uniq
+commands["/usr/bin/uniq"] = Command_uniq
+commands["uniq"] = Command_uniq

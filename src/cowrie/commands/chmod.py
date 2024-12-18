@@ -1,12 +1,12 @@
 # Copyright (c) 2020 Peter Sufliarsky <sufliarskyp@gmail.com>
 # See the COPYRIGHT file for more information
 
+from __future__ import annotations
 
 import getopt
 import re
 
 from cowrie.shell.command import HoneyPotCommand
-
 
 commands = {}
 
@@ -46,8 +46,8 @@ MODE_REGEX = "^[ugoa]*([-+=]([rwxXst]*|[ugo]))+|[-+=]?[0-7]+$"
 TRY_CHMOD_HELP_MSG = "Try 'chmod --help' for more information.\n"
 
 
-class command_chmod(HoneyPotCommand):
-    def call(self):
+class Command_chmod(HoneyPotCommand):
+    def call(self) -> None:
         # parse the command line arguments
         opts, mode, files, getopt_err = self.parse_args()
         if getopt_err:
@@ -141,5 +141,5 @@ class command_chmod(HoneyPotCommand):
         return opts, mode, files, False
 
 
-commands["/bin/chmod"] = command_chmod
-commands["chmod"] = command_chmod
+commands["/bin/chmod"] = Command_chmod
+commands["chmod"] = Command_chmod

@@ -2,6 +2,9 @@
 Send downloaded/uplaoded files to S3 (or compatible)
 """
 
+from __future__ import annotations
+
+from typing import Any
 
 from configparser import NoOptionError
 
@@ -20,9 +23,9 @@ class Output(cowrie.core.output.Output):
     s3 output
     """
 
-    def start(self):
+    def start(self) -> None:
         self.bucket = CowrieConfig.get("output_s3", "bucket")
-        self.seen = set()
+        self.seen: set[str] = set()
         self.session = get_session()
 
         try:
@@ -45,15 +48,15 @@ class Output(cowrie.core.output.Output):
             verify=CowrieConfig.getboolean("output_s3", "verify", fallback=True),
         )
 
-    def stop(self):
+    def stop(self) -> None:
         pass
 
-    def write(self, entry):
-        if entry["eventid"] == "cowrie.session.file_download":
-            self.upload(entry["shasum"], entry["outfile"])
+    def write(self, event: dict[str, Any]) -> None:
+        if event["eventid"] == "cowrie.session.file_download":
+            self.upload(event["shasum"], event["outfile"])
 
-        elif entry["eventid"] == "cowrie.session.file_upload":
-            self.upload(entry["shasum"], entry["outfile"])
+        elif event["eventid"] == "cowrie.session.file_upload":
+            self.upload(event["shasum"], event["outfile"])
 
     @defer.inlineCallbacks
     def _object_exists_remote(self, shasum):
@@ -73,16 +76,16 @@ class Output(cowrie.core.output.Output):
     @defer.inlineCallbacks
     def upload(self, shasum, filename):
         if shasum in self.seen:
-            print(f"Already uploaded file with sha {shasum} to S3")
+            log.msg(f"Already uploaded file with sha {shasum} to S3")
             return
 
         exists = yield self._object_exists_remote(shasum)
         if exists:
-            print(f"Somebody else already uploaded file with sha {shasum} to S3")
+            log.msg(f"Somebody else already uploaded file with sha {shasum} to S3")
             self.seen.add(shasum)
             return
 
-        print(f"Uploading file with sha {shasum} ({filename}) to S3")
+        log.msg(f"Uploading file with sha {shasum} ({filename}) to S3")
         with open(filename, "rb") as fp:
             yield threads.deferToThread(
                 self.client.put_object,

@@ -5,19 +5,23 @@
 This module contains code to run a command
 """
 
+from __future__ import annotations
 
 import os
 import re
 import shlex
 import stat
 import time
-from typing import Callable
 
 from twisted.internet import error
 from twisted.python import failure, log
 
 from cowrie.core.config import CowrieConfig
 from cowrie.shell import fs
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class HoneyPotCommand:
@@ -30,12 +34,14 @@ class HoneyPotCommand:
     def __init__(self, protocol, *args):
         self.protocol = protocol
         self.args = list(args)
-        self.environ = self.protocol.cmdstack[0].environ
+        self.environ = self.protocol.cmdstack[-1].environ
         self.fs = self.protocol.fs
-        self.data = None  # output data
-        self.input_data = None  # used to store STDIN data passed via PIPE
-        self.writefn: Callable = self.protocol.pp.outReceived
-        self.errorWritefn = self.protocol.pp.errReceived
+        self.data: bytes = b""  # output data
+        self.input_data: None | (bytes) = (
+            None  # used to store STDIN data passed via PIPE
+        )
+        self.writefn: Callable[[bytes], None] = self.protocol.pp.outReceived
+        self.errorWritefn: Callable[[bytes], None] = self.protocol.pp.errReceived
         # MS-DOS style redirect handling, inside the command
         # TODO: handle >>, 2>, etc
         if ">" in self.args or ">>" in self.args:
@@ -72,18 +78,24 @@ class HoneyPotCommand:
                 )
                 perm = stat.S_IRUSR | stat.S_IWUSR | stat.S_IRGRP | stat.S_IROTH
                 try:
-                    self.fs.mkfile(self.outfile, 0, 0, 0, stat.S_IFREG | perm)
+                    self.fs.mkfile(
+                        self.outfile,
+                        self.protocol.user.uid,
+                        self.protocol.user.gid,
+                        0,
+                        stat.S_IFREG | perm,
+                    )
                 except fs.FileNotFound:
                     # The outfile locates at a non-existing directory.
                     self.errorWrite(
-                        "-bash: %s: No such file or directory\n" % self.outfile
+                        f"-bash: {self.outfile}: No such file or directory\n"
                     )
                     self.writefn = self.write_to_failed
                     self.outfile = None
                     self.safeoutfile = ""
                 except fs.PermissionDenied:
                     # The outfile locates in a file-system that doesn't allow file creation
-                    self.errorWrite("-bash: %s: Permission denied\n" % self.outfile)
+                    self.errorWrite(f"-bash: {self.outfile}: Permission denied\n")
                     self.writefn = self.write_to_failed
                     self.outfile = None
                     self.safeoutfile = ""
@@ -126,7 +138,7 @@ class HoneyPotCommand:
             files.append(path)
         return files
 
-    def set_input_data(self, data):
+    def set_input_data(self, data: bytes) -> None:
         self.input_data = data
 
     def write_to_file(self, data: bytes) -> None:
@@ -135,16 +147,16 @@ class HoneyPotCommand:
         self.writtenBytes += len(data)
         self.fs.update_size(self.outfile, self.writtenBytes)
 
-    def write_to_failed(self, data):
+    def write_to_failed(self, data: bytes) -> None:
         pass
 
     def start(self) -> None:
-        if self.write != self.write_to_failed:
+        if self.writefn != self.write_to_failed:
             self.call()
         self.exit()
 
     def call(self) -> None:
-        self.write("Hello World! [{}]\n".format(repr(self.args)))
+        self.write(f"Hello World! [{self.args!r}]\n")
 
     def exit(self) -> None:
         """
@@ -162,7 +174,8 @@ class HoneyPotCommand:
                 self.protocol.terminal.redirFiles.add((self.safeoutfile, ""))
 
         if len(self.protocol.cmdstack):
-            self.protocol.cmdstack.pop()
+            self.protocol.cmdstack.remove(self)
+
             if len(self.protocol.cmdstack):
                 self.protocol.cmdstack[-1].resume()
         else:

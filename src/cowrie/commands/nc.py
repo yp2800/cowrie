@@ -1,4 +1,6 @@
+from __future__ import annotations
 import getopt
+import ipaddress
 import re
 import socket
 import struct
@@ -11,50 +13,45 @@ long = int
 commands = {}
 
 
-def makeMask(n):
+def makeMask(n: int) -> int:
     """
     return a mask of n bits as a long integer
     """
     return (long(2) << n - 1) - 1
 
 
-def dottedQuadToNum(ip):
+def dottedQuadToNum(ip: str) -> int:
     """
     convert decimal dotted quad string to long integer
     this will throw builtins.OSError on failure
     """
-    return struct.unpack("I", socket.inet_aton(ip))[0]
+    ip32bit: bytes = socket.inet_aton(ip)
+    num: int = struct.unpack("I", ip32bit)[0]
+    return num
 
 
-def networkMask(ip, bits):
+def networkMask(ip: str, bits: int) -> int:
     """
     Convert a network address to a long integer
     """
     return dottedQuadToNum(ip) & makeMask(bits)
 
 
-def addressInNetwork(ip, net):
+def addressInNetwork(ip: int, net: int) -> int:
     """
     Is an address in a network
     """
     return ip & net == net
 
 
-local_networks = [
-    networkMask("10.0.0.0", 8),
-    networkMask("172.16.0.0", 12),
-    networkMask("192.168.0.0", 16),
-]
-
-
-class command_nc(HoneyPotCommand):
+class Command_nc(HoneyPotCommand):
     """
     netcat
     """
 
     s: socket.socket
 
-    def help(self):
+    def help(self) -> None:
         self.write(
             """This is nc from the netcat-openbsd package. An alternative nc is available
 in the netcat-traditional package.
@@ -64,7 +61,7 @@ usage: nc [-46bCDdhjklnrStUuvZz] [-I length] [-i interval] [-O length]
           [-x proxy_address[:port]] [destination] [port]\n"""
         )
 
-    def start(self):
+    def start(self) -> None:
         try:
             optlist, args = getopt.getopt(
                 self.args, "46bCDdhklnrStUuvZzI:i:O:P:p:q:s:T:V:w:X:x:"
@@ -100,10 +97,9 @@ usage: nc [-46bCDdhjklnrStUuvZz] [-I length] [-i interval] [-O length]
             self.exit()
             return
 
-        for net in local_networks:
-            if addressInNetwork(address, net):
-                self.exit()
-                return
+        if ipaddress.ip_address(address).is_private:
+            self.exit()
+            return
 
         out_addr = None
         try:
@@ -119,7 +115,7 @@ usage: nc [-46bCDdhjklnrStUuvZz] [-I length] [-i interval] [-O length]
         except Exception:
             self.exit()
 
-    def recv_data(self):
+    def recv_data(self) -> None:
         data = b""
         while 1:
             packet = self.s.recv(1024)
@@ -132,19 +128,19 @@ usage: nc [-46bCDdhjklnrStUuvZz] [-I length] [-i interval] [-O length]
         self.s.close()
         self.exit()
 
-    def lineReceived(self, line):
+    def lineReceived(self, line: str) -> None:
         if hasattr(self, "s"):
             self.s.send(line.encode("utf8"))
 
-    def handle_CTRL_C(self):
+    def handle_CTRL_C(self) -> None:
         self.write("^C\n")
         if hasattr(self, "s"):
             self.s.close()
 
-    def handle_CTRL_D(self):
+    def handle_CTRL_D(self) -> None:
         if hasattr(self, "s"):
             self.s.close()
 
 
-commands["/bin/nc"] = command_nc
-commands["nc"] = command_nc
+commands["/bin/nc"] = Command_nc
+commands["nc"] = Command_nc

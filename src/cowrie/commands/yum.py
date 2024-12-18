@@ -5,38 +5,47 @@
 # Modified by Fabiola Buschendorf, https://github.com/FabiolaBusch
 
 
+from __future__ import annotations
+
 import hashlib
 import random
 import re
+from typing import Any, TYPE_CHECKING
 
-from twisted.internet import defer, reactor
+from twisted.internet import defer
+from twisted.internet import reactor
 from twisted.internet.defer import inlineCallbacks
 from twisted.python import log
 
 from cowrie.shell.command import HoneyPotCommand
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
 arch = "x86_64"
 commands = {}
 
 
-class command_faked_package_class_factory:
+class Command_faked_package_class_factory:
     @staticmethod
-    def getCommand(name):
-        class command_faked_installation(HoneyPotCommand):
-            def call(self):
-                self.write("{}: Segmentation fault\n".format(name))
+    def getCommand(name: str) -> Callable:
+        class Command_faked_installation(HoneyPotCommand):
+            def call(self) -> None:
+                self.write(f"{name}: Segmentation fault\n")
 
-        return command_faked_installation
+        return Command_faked_installation
 
 
-class command_yum(HoneyPotCommand):
+class Command_yum(HoneyPotCommand):
     """
     yum fake
     suppports only the 'install PACKAGE' command & 'moo'.
     Any installed packages, places a 'Segfault' at /usr/bin/PACKAGE.'''
     """
 
-    def start(self):
+    packages: dict[str, dict[str, Any]]
+
+    def start(self) -> None:
         if len(self.args) == 0:
             self.do_help()
         elif len(self.args) > 0 and self.args[0] == "version":
@@ -45,12 +54,13 @@ class command_yum(HoneyPotCommand):
             self.do_install()
         else:
             self.do_locked()
+        self.packages = {}
 
-    def sleep(self, time, time2=None):
-        d = defer.Deferred()
+    def sleep(self, time: float, time2: float | None = None) -> defer.Deferred:
+        d: defer.Deferred = defer.Deferred()
         if time2:
-            time = random.randint(time * 100, time2 * 100) / 100.0
-        reactor.callLater(time, d.callback, None)
+            time = random.randint(int(time * 100), int(time2 * 100)) / 100.0
+        reactor.callLater(time, d.callback, None)  # type: ignore[attr-defined]
         return d
 
     @inlineCallbacks
@@ -60,12 +70,10 @@ class command_yum(HoneyPotCommand):
         )
         randnum = random.randint(100, 900)
         randnum2 = random.randint(100, 900)
-        randhash = hashlib.sha1(b"{}".format(randnum)).hexdigest()
-        randhash2 = hashlib.sha1(b"{}".format(randnum2)).hexdigest()
+        randhash = hashlib.sha1(f"{randnum}".encode()).hexdigest()
+        randhash2 = hashlib.sha1(f"{randnum2}".encode()).hexdigest()
         yield self.sleep(1, 2)
-        self.write(
-            "Installed: 7/{}  {}:{}\n".format(arch, random.randint(500, 800), randhash)
-        )
+        self.write(f"Installed: 7/{arch}  {random.randint(500, 800)}:{randhash}\n")
         self.write(f"Group-Installed: yum 13:{randhash2}\n")
         self.write("version\n")
         self.exit()
@@ -194,17 +202,13 @@ Options:
             self.exit()
             return
 
-        global packages
-        packages = {}
         for y in [re.sub("[^A-Za-z0-9]", "", x) for x in self.args[1:]]:
-            packages[y] = {
-                "version": "{}.{}-{}".format(
-                    random.choice([0, 1]), random.randint(1, 40), random.randint(1, 10)
-                ),
+            self.packages[y] = {
+                "version": f"{random.choice([0, 1])}.{random.randint(1, 40)}-{random.randint(1, 10)}",
                 "size": random.randint(100, 900),
-                "release": "{}.el7".format(random.randint(1, 15)),
+                "release": f"{random.randint(1, 15)}.el7",
             }
-        totalsize = sum([packages[x]["size"] for x in packages])
+        totalsize: int = sum(self.packages[x]["size"] for x in self.packages)
         repository = "base"
 
         yield self.sleep(1)
@@ -213,17 +217,15 @@ Options:
         )
         yield self.sleep(2.2)
         self.write(
-            "{} packages excluded due to repository priority protections\n".format(
-                random.randint(200, 300)
-            )
+            f"{random.randint(200, 300)} packages excluded due to repository priority protections\n"
         )
         yield self.sleep(0.9)
         self.write("Resolving Dependencies\n")
         self.write("--> Running transaction check\n")
-        for p in packages:
+        for p in self.packages:
             self.write(
                 "---> Package {}.{} {}.{} will be installed\n".format(
-                    p, packages[p]["version"], arch, packages[p]["release"]
+                    p, self.packages[p]["version"], arch, self.packages[p]["release"]
                 )
             )
         self.write("--> Finished Dependency Resolution\n")
@@ -238,24 +240,24 @@ Options:
         self.write(" Package\t\t\tArch\t\t\tVersion\t\t\t\tRepository\t\t\tSize\n")
         self.write("{}\n".format("=" * 176))
         self.write("Installing:\n")
-        for p in packages:
+        for p in self.packages:
             self.write(
                 " {}\t\t\t\t{}\t\t\t{}-{}\t\t\t{}\t\t\t\t{} k\n".format(
                     p,
                     arch,
-                    packages[p]["version"],
-                    packages[p]["release"],
+                    self.packages[p]["version"],
+                    self.packages[p]["release"],
                     repository,
-                    packages[p]["size"],
+                    self.packages[p]["size"],
                 )
             )
         self.write("\n")
         self.write("Transaction Summary\n")
         self.write("{}\n".format("=" * 176))
-        self.write("Install  {} Packages\n\n".format(len(packages)))
+        self.write(f"Install  {len(self.packages)} Packages\n\n")
 
         self.write(f"Total download size: {totalsize} k\n")
-        self.write("Installed size: {:.1f} M\n".format(totalsize * 0.0032))
+        self.write(f"Installed size: {0.0032*totalsize:.1f} M\n")
         self.write("Is this ok [y/d/N]: ")
         # Assume 'yes'
 
@@ -271,50 +273,50 @@ Options:
         self.write("Transaction test succeeded\n")
         self.write("Running transaction\n")
         i = 1
-        for p in packages:
+        for p in self.packages:
             self.write(
                 "  Installing : {}-{}-{}.{} \t\t\t\t {}/{} \n".format(
                     p,
-                    packages[p]["version"],
-                    packages[p]["release"],
+                    self.packages[p]["version"],
+                    self.packages[p]["release"],
                     arch,
                     i,
-                    len(packages),
+                    len(self.packages),
                 )
             )
             yield self.sleep(0.5, 1)
             i += 1
         i = 1
-        for p in packages:
+        for p in self.packages:
             self.write(
                 "  Verifying : {}-{}-{}.{} \t\t\t\t {}/{} \n".format(
                     p,
-                    packages[p]["version"],
-                    packages[p]["release"],
+                    self.packages[p]["version"],
+                    self.packages[p]["release"],
                     arch,
                     i,
-                    len(packages),
+                    len(self.packages),
                 )
             )
             yield self.sleep(0.5, 1)
             i += 1
         self.write("\n")
         self.write("Installed:\n")
-        for p in packages:
+        for p in self.packages:
             self.write(
                 "  {}.{} {}:{}-{} \t\t".format(
                     p,
                     arch,
                     random.randint(0, 2),
-                    packages[p]["version"],
-                    packages[p]["release"],
+                    self.packages[p]["version"],
+                    self.packages[p]["release"],
                 )
             )
         self.write("\n")
         self.write("Complete!\n")
         self.exit()
 
-    def do_locked(self):
+    def do_locked(self) -> None:
         self.errorWrite(
             "Loaded plugins: changelog, kernel-module, ovl, priorities, tsflags, versionlock\n"
         )
@@ -324,5 +326,5 @@ Options:
         self.exit()
 
 
-commands["/usr/bin/yum"] = command_yum
-commands["yum"] = command_yum
+commands["/usr/bin/yum"] = Command_yum
+commands["yum"] = Command_yum

@@ -1,3 +1,4 @@
+from __future__ import annotations
 import argparse
 
 
@@ -25,7 +26,7 @@ class CustomParser(argparse.ArgumentParser):
         usage=None,
         description=None,
         epilog=None,
-        parents=[],
+        parents=None,
         formatter_class=argparse.HelpFormatter,
         prefix_chars="-",
         fromfile_prefix_chars=None,
@@ -34,6 +35,8 @@ class CustomParser(argparse.ArgumentParser):
         add_help=True,
     ):
         self.protocol = protocol
+        if parents is None:
+            parents = []
         super().__init__(
             prog=prog,
             usage=usage,
@@ -49,11 +52,11 @@ class CustomParser(argparse.ArgumentParser):
         )
 
     def exit(self, status=0, message=None):
-        raise ExitException("Exiting...")
+        raise ExitException
 
     def _print_message(self, message, file=None):
         super()._print_message(message, self.protocol)
 
     def error(self, message):
         self.print_usage(self.protocol)
-        raise OptionNotFound("Sorry no option found")
+        raise OptionNotFound

@@ -1,14 +1,15 @@
 # Copyright (c) 2014 Peter Reuterås <peter@reuteras.com>
 # See the COPYRIGHT file for more information
 
+from __future__ import annotations
 
 from cowrie.shell.command import HoneyPotCommand
 
 commands = {}
 
 
-class command_ethtool(HoneyPotCommand):
-    def call(self):
+class Command_ethtool(HoneyPotCommand):
+    def call(self) -> None:
         func = self.do_ethtool_help
         for x in self.args:
             if x.startswith("lo"):
@@ -19,7 +20,7 @@ class command_ethtool(HoneyPotCommand):
                 func = self.do_ethtool_eth1
         func()
 
-    def do_ethtool_help(self):
+    def do_ethtool_help(self) -> None:
         """
         No real help output.
         """
@@ -28,14 +29,13 @@ class command_ethtool(HoneyPotCommand):
 For more information run ethtool -h\n"""
         )
 
-    def do_ethtool_lo(self):
-
+    def do_ethtool_lo(self) -> None:
         self.write(
             """Settings for lo:
             Link detected: yes\n"""
         )
 
-    def do_ethtool_eth0(self):
+    def do_ethtool_eth0(self) -> None:
         self.write(
             """Settings for eth0:
 Supported ports: [ TP MII ]
@@ -67,7 +67,7 @@ Current message level: 0x00000033 (51)
 Link detected: yes\n"""
         )
 
-    def do_ethtool_eth1(self):
+    def do_ethtool_eth1(self) -> None:
         self.write(
             """Settings for eth1:
 Cannot get device settings: No such device
@@ -78,5 +78,5 @@ No data available\n"""
         )
 
 
-commands["/sbin/ethtool"] = command_ethtool
-commands["ethtool"] = command_ethtool
+commands["/sbin/ethtool"] = Command_ethtool
+commands["ethtool"] = Command_ethtool

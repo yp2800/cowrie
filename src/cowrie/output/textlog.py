@@ -27,6 +27,8 @@
 # SUCH DAMAGE.
 
 
+from __future__ import annotations
+
 import cowrie.core.cef
 import cowrie.core.output
 from cowrie.core.config import CowrieConfig
@@ -39,17 +41,19 @@ class Output(cowrie.core.output.Output):
 
     def start(self):
         self.format = CowrieConfig.get("output_textlog", "format")
-        self.outfile = open(CowrieConfig.get("output_textlog", "logfile"), "a")
+        self.outfile = open(
+            CowrieConfig.get("output_textlog", "logfile"), "a", encoding="utf-8"
+        )
 
     def stop(self):
         pass
 
-    def write(self, logentry):
+    def write(self, event):
         if self.format == "cef":
-            self.outfile.write("{} ".format(logentry["timestamp"]))
-            self.outfile.write("{}\n".format(cowrie.core.cef.formatCef(logentry)))
+            self.outfile.write("{} ".format(event["timestamp"]))
+            self.outfile.write(f"{cowrie.core.cef.formatCef(event)}\n")
         else:
-            self.outfile.write("{} ".format(logentry["timestamp"]))
-            self.outfile.write("{} ".format(logentry["session"]))
-            self.outfile.write("{}\n".format(logentry["message"]))
+            self.outfile.write("{} ".format(event["timestamp"]))
+            self.outfile.write("{} ".format(event["session"]))
+            self.outfile.write("{}\n".format(event["message"]))
         self.outfile.flush()

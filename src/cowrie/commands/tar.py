@@ -1,6 +1,7 @@
 # Copyright (c) 2009 Upi Tamminen <desaster@gmail.com>
 # See the COPYRIGHT file for more information
 
+from __future__ import annotations
 
 import os
 import tarfile
@@ -13,15 +14,23 @@ from cowrie.shell.fs import A_REALFILE
 commands = {}
 
 
-class command_tar(HoneyPotCommand):
-    def mkfullpath(self, path, f):
-        l, d = path.split("/"), []
-        while len(l):
-            d.append(l.pop(0))
-            if not self.fs.exists("/".join(d)):
-                self.fs.mkdir("/".join(d), 0, 0, 4096, f.mode, f.mtime)
+class Command_tar(HoneyPotCommand):
+    def mkfullpath(self, path: str, f: tarfile.TarInfo) -> None:
+        components, d = path.split("/"), []
+        while len(components):
+            d.append(components.pop(0))
+            p = "/".join(d)
+            if p and not self.fs.exists(p):
+                self.fs.mkdir(
+                    p,
+                    self.protocol.user.uid,
+                    self.protocol.user.gid,
+                    4096,
+                    f.mode,
+                    f.mtime,
+                )
 
-    def call(self):
+    def call(self) -> None:
         if len(self.args) < 2:
             self.write("tar: You must specify one of the `-Acdtrux' options\n")
             self.write("Try `tar --help' or `tar --usage' for more information.\n")
@@ -38,21 +47,21 @@ class command_tar(HoneyPotCommand):
 
         path = self.fs.resolve_path(filename, self.protocol.cwd)
         if not path or not self.protocol.fs.exists(path):
-            self.write("tar: %s: Cannot open: No such file or directory\n" % filename)
+            self.write(f"tar: {filename}: Cannot open: No such file or directory\n")
             self.write("tar: Error is not recoverable: exiting now\n")
             self.write("tar: Child returned status 2\n")
             self.write("tar: Error exit delayed from previous errors\n")
             return
 
-        f = self.fs.getfile(path)
-        if not f[A_REALFILE]:
+        hpf = self.fs.getfile(path)
+        if not hpf[A_REALFILE]:
             self.write("tar: this does not look like a tar archive\n")
             self.write("tar: skipping to next header\n")
             self.write("tar: error exit delayed from previous errors\n")
             return
 
         try:
-            t = tarfile.open(f[A_REALFILE])
+            t = tarfile.open(hpf[A_REALFILE])
         except Exception:
             self.write("tar: this does not look like a tar archive\n")
             self.write("tar: skipping to next header\n")
@@ -66,13 +75,27 @@ class command_tar(HoneyPotCommand):
             if not extract or not len(dest):
                 continue
             if f.isdir():
-                self.fs.mkdir(dest, 0, 0, 4096, f.mode, f.mtime)
+                self.fs.mkdir(
+                    dest,
+                    self.protocol.user.uid,
+                    self.protocol.user.gid,
+                    4096,
+                    f.mode,
+                    f.mtime,
+                )
             elif f.isfile():
                 self.mkfullpath(os.path.dirname(dest), f)
-                self.fs.mkfile(dest, 0, 0, f.size, f.mode, f.mtime)
+                self.fs.mkfile(
+                    dest,
+                    self.protocol.user.uid,
+                    self.protocol.user.gid,
+                    f.size,
+                    f.mode,
+                    f.mtime,
+                )
             else:
                 log.msg(f"tar: skipping [{f.name}]")
 
 
-commands["/bin/tar"] = command_tar
-commands["tar"] = command_tar
+commands["/bin/tar"] = Command_tar
+commands["tar"] = Command_tar

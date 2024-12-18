@@ -1,14 +1,16 @@
 # Copyright (c) 2009-2014 Upi Tamminen <desaster@gmail.com>
 # See the COPYRIGHT file for more information
 
+from __future__ import annotations
 
 import hashlib
 import os
 import time
-from typing import List, Set
+from typing import Any
 
 from twisted.conch.insults import insults
-from twisted.python import log
+from twisted.internet.protocol import connectionDone
+from twisted.python import failure, log
 
 from cowrie.core import ttylog
 from cowrie.core.config import CowrieConfig
@@ -20,32 +22,41 @@ class LoggingServerProtocol(insults.ServerProtocol):
     Wrapper for ServerProtocol that implements TTY logging
     """
 
-    redirlogOpen = False  # it will be set at core/protocol.py
-    stdinlogOpen = False
-    ttylogOpen = False
-    ttylogPath = CowrieConfig.get("honeypot", "ttylog_path")
-    downloadPath = CowrieConfig.get("honeypot", "download_path")
-    ttylogEnabled = CowrieConfig.getboolean("honeypot", "ttylog", fallback=True)
-    bytesReceivedLimit = CowrieConfig.getint(
+    ttylogPath: str = CowrieConfig.get("honeypot", "ttylog_path", fallback=".")
+    downloadPath: str = CowrieConfig.get("honeypot", "download_path", fallback=".")
+    ttylogEnabled: bool = CowrieConfig.getboolean("honeypot", "ttylog", fallback=True)
+    bytesReceivedLimit: int = CowrieConfig.getint(
         "honeypot", "download_limit_size", fallback=0
     )
-    bytesReceived = 0
-    redirFiles: Set[List[str]] = set()
 
-    def __init__(self, prot=None, *a, **kw):
-        insults.ServerProtocol.__init__(self, prot, *a, **kw)
+    def __init__(self, protocolFactory=None, *a, **kw):
+        self.type: str
+        self.ttylogFile: str
+        self.ttylogSize: int = 0
+        self.bytesSent: int = 0
+        self.bytesReceived: int = 0
+        self.redirFiles: set[list[str]] = set()
+        self.redirlogOpen: bool = False  # it will be set at core/protocol.py
+        self.stdinlogOpen: bool = False
+        self.ttylogOpen: bool = False
+        self.terminalProtocol: Any
+        self.transport: Any
+        self.startTime: float
+        self.stdinlogFile: str
 
-        if prot is protocol.HoneyPotExecProtocol:
+        insults.ServerProtocol.__init__(self, protocolFactory, *a, **kw)
+
+        if protocolFactory is protocol.HoneyPotExecProtocol:
             self.type = "e"  # Execcmd
         else:
             self.type = "i"  # Interactive
 
-    def getSessionId(self):
+    def getSessionId(self) -> tuple[str, str]:
         transportId = self.transport.session.conn.transport.transportId
         channelId = self.transport.session.id
         return (transportId, channelId)
 
-    def connectionMade(self):
+    def connectionMade(self) -> None:
         transportId, channelId = self.getSessionId()
         self.startTime = time.time()
 
@@ -84,7 +95,8 @@ class LoggingServerProtocol(insults.ServerProtocol):
         if self.type == "e":
             self.terminalProtocol.execcmd.encode("utf8")
 
-    def write(self, data):
+    def write(self, data: bytes) -> None:
+        self.bytesSent += len(data)
         if self.ttylogEnabled and self.ttylogOpen:
             ttylog.ttylog_write(
                 self.ttylogFile, len(data), ttylog.TYPE_OUTPUT, time.time(), data
@@ -93,7 +105,7 @@ class LoggingServerProtocol(insults.ServerProtocol):
 
         insults.ServerProtocol.write(self, data)
 
-    def dataReceived(self, data):
+    def dataReceived(self, data: bytes) -> None:
         """
         Input received from user
         """
@@ -111,25 +123,22 @@ class LoggingServerProtocol(insults.ServerProtocol):
                 self.ttylogFile, len(data), ttylog.TYPE_INPUT, time.time(), data
             )
 
-        # prevent crash if something like this was passed:
-        # echo cmd ; exit; \n\n
-        if self.terminalProtocol:
-            insults.ServerProtocol.dataReceived(self, data)
+        insults.ServerProtocol.dataReceived(self, data)
 
-    def eofReceived(self):
+    def eofReceived(self) -> None:
         """
         Receive channel close and pass on to terminal
         """
         if self.terminalProtocol:
             self.terminalProtocol.eofReceived()
 
-    def loseConnection(self):
+    def loseConnection(self) -> None:
         """
         Override super to remove the terminal reset on logout
         """
         self.transport.loseConnection()
 
-    def connectionLost(self, reason):
+    def connectionLost(self, reason: failure.Failure = connectionDone) -> None:
         """
         FIXME: this method is called 4 times on logout....
         it's called once from Avatar.closed() if disconnected
@@ -161,7 +170,6 @@ class LoggingServerProtocol(insults.ServerProtocol):
 
         if self.redirFiles:
             for rp in self.redirFiles:
-
                 rf = rp[0]
 
                 if rp[1]:
@@ -216,12 +224,12 @@ class LoggingServerProtocol(insults.ServerProtocol):
 
             log.msg(
                 eventid="cowrie.log.closed",
-                format="Closing TTY Log: %(ttylog)s after %(duration)d seconds",
+                format="Closing TTY Log: %(ttylog)s after %(duration)s seconds",
                 ttylog=shasumfile,
                 size=self.ttylogSize,
                 shasum=shasum,
                 duplicate=duplicate,
-                duration=time.time() - self.startTime,
+                duration=f"{time.time() - self.startTime:.1f}",
             )
 
         insults.ServerProtocol.connectionLost(self, reason)
@@ -232,7 +240,7 @@ class LoggingTelnetServerProtocol(LoggingServerProtocol):
     Wrap LoggingServerProtocol with single method to fetch session id for Telnet
     """
 
-    def getSessionId(self):
+    def getSessionId(self) -> tuple[str, str]:
         transportId = self.transport.session.transportId
         sn = self.transport.session.transport.transport.sessionno
         return (transportId, sn)

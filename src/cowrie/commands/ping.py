@@ -1,6 +1,7 @@
 # Copyright (c) 2009 Upi Tamminen <desaster@gmail.com>
 # See the COPYRIGHT file for more information
 
+from __future__ import annotations
 
 import getopt
 import hashlib
@@ -16,7 +17,7 @@ from cowrie.shell.command import HoneyPotCommand
 commands = {}
 
 
-class command_ping(HoneyPotCommand):
+class Command_ping(HoneyPotCommand):
     """
     ping command
     """
@@ -28,14 +29,15 @@ class command_ping(HoneyPotCommand):
     running: bool
     scheduled: Any
 
-    def valid_ip(self, address):
+    def valid_ip(self, address: str) -> bool:
         try:
             socket.inet_aton(address)
-            return True
         except Exception:
             return False
+        else:
+            return True
 
-    def start(self):
+    def start(self) -> None:
         self.host = ""
         self.max = 0
         self.running = False
@@ -76,6 +78,7 @@ class command_ping(HoneyPotCommand):
             else:
                 self.write(f"ping: unknown host {self.host}\n")
                 self.exit()
+                return
         else:
             s = hashlib.md5((self.host).encode("utf-8")).hexdigest()
             self.ip = ".".join(
@@ -84,15 +87,13 @@ class command_ping(HoneyPotCommand):
 
         self.running = True
         self.write(f"PING {self.host} ({self.ip}) 56(84) bytes of data.\n")
-        self.scheduled = reactor.callLater(0.2, self.showreply)
+        self.scheduled = reactor.callLater(0.2, self.showreply)  # type: ignore[attr-defined]
         self.count = 0
 
-    def showreply(self):
+    def showreply(self) -> None:
         ms = 40 + random.random() * 10
         self.write(
-            "64 bytes from {} ({}): icmp_seq={} ttl=50 time={:.1f} ms\n".format(
-                self.host, self.ip, self.count + 1, ms
-            )
+            f"64 bytes from {self.host} ({self.ip}): icmp_seq={self.count + 1} ttl=50 time={ms:.1f} ms\n"
         )
         self.count += 1
         if self.count == self.max:
@@ -100,18 +101,18 @@ class command_ping(HoneyPotCommand):
             self.write("\n")
             self.printstatistics()
             self.exit()
+            return
         else:
-            self.scheduled = reactor.callLater(1, self.showreply)
+            self.scheduled = reactor.callLater(1, self.showreply)  # type: ignore[attr-defined]
 
-    def printstatistics(self):
+    def printstatistics(self) -> None:
         self.write(f"--- {self.host} ping statistics ---\n")
         self.write(
-            "%d packets transmitted, %d received, 0%% packet loss, time 907ms\n"
-            % (self.count, self.count)
+            f"{self.count} packets transmitted, {self.count} received, 0% packet loss, time 907ms\n"
         )
         self.write("rtt min/avg/max/mdev = 48.264/50.352/52.441/2.100 ms\n")
 
-    def handle_CTRL_C(self):
+    def handle_CTRL_C(self) -> None:
         if self.running is False:
             return HoneyPotCommand.handle_CTRL_C(self)
         else:
@@ -121,5 +122,5 @@ class command_ping(HoneyPotCommand):
             self.exit()
 
 
-commands["/bin/ping"] = command_ping
-commands["ping"] = command_ping
+commands["/bin/ping"] = Command_ping
+commands["ping"] = Command_ping

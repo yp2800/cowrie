@@ -1,6 +1,8 @@
 # Copyright (c) 2019 Guilherme Borges <guilhermerosasborges@gmail.com>
 # See the COPYRIGHT file for more information
 
+from __future__ import annotations
+
 import struct
 
 from twisted.internet.protocol import ClientFactory, Protocol
@@ -11,7 +13,7 @@ from cowrie.core.config import CowrieConfig
 
 class PoolClient(Protocol):
     """
-    Represents the connection between a protocol instance (SSH or Telnet) and a Qemu pool
+    Represents the connection between a protocol instance (SSH or Telnet) and a QEMU pool
     """
 
     def __init__(self, factory):
@@ -41,7 +43,7 @@ class PoolClient(Protocol):
         self.transport.write(buf)
 
     def send_vm_request(self, src_ip):
-        fmt = "!cH{}s".format(len(src_ip))
+        fmt = f"!cH{len(src_ip)}s"
         buf = struct.pack(fmt, b"r", len(src_ip), src_ip.encode())
 
         self.transport.write(buf)

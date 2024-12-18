@@ -26,56 +26,61 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
+from __future__ import annotations
+
 from twisted.python import log
+from twisted.conch.ssh import filetransfer
 
 from cowrie.ssh_proxy.protocols import base_protocol
 
 
-class SFTP(base_protocol.BaseProtocol):
-    prevID = ""
-    ID = ""
-    handle = ""
-    path = ""
-    command = ""
-    payloadSize = 0
-    payloadOffset = 0
-    theFile = ""
+# PACKETLAYOUT = {
+#     1: "SSH_FXP_INIT",
+#     # ['uint32', 'version'], [['string', 'extension_name'], ['string', 'extension_data']]]
+#     2: "SSH_FXP_VERSION",
+#     # [['uint32', 'version'], [['string', 'extension_name'], ['string', 'extension_data']]]
+#     3: "SSH_FXP_OPEN",
+#     # [['uint32', 'id'], ['string', 'filename'], ['uint32', 'pflags'], ['ATTRS', 'attrs']]
+#     4: "SSH_FXP_CLOSE",  # [['uint32', 'id'], ['string', 'handle']]
+#     5: "SSH_FXP_READ",  # [['uint32', 'id'], ['string', 'handle'], ['uint64', 'offset'], ['uint32', 'len']]
+#     6: "SSH_FXP_WRITE",
+#     # [['uint32', 'id'], ['string', 'handle'], ['uint64', 'offset'], ['string', 'data']]
+#     7: "SSH_FXP_LSTAT",  # [['uint32', 'id'], ['string', 'path']]
+#     8: "SSH_FXP_FSTAT",  # [['uint32', 'id'], ['string', 'handle']]
+#     9: "SSH_FXP_SETSTAT",  # [['uint32', 'id'], ['string', 'path'], ['ATTRS', 'attrs']]
+#     10: "SSH_FXP_FSETSTAT",  # [['uint32', 'id'], ['string', 'handle'], ['ATTRS', 'attrs']]
+#     11: "SSH_FXP_OPENDIR",  # [['uint32', 'id'], ['string', 'path']]
+#     12: "SSH_FXP_READDIR",  # [['uint32', 'id'], ['string', 'handle']]
+#     13: "SSH_FXP_REMOVE",  # [['uint32', 'id'], ['string', 'filename']]
+#     14: "SSH_FXP_MKDIR",  # [['uint32', 'id'], ['string', 'path'], ['ATTRS', 'attrs']]
+#     15: "SSH_FXP_RMDIR",  # [['uint32', 'id'], ['string', 'path']]
+#     16: "SSH_FXP_REALPATH",  # [['uint32', 'id'], ['string', 'path']]
+#     17: "SSH_FXP_STAT",  # [['uint32', 'id'], ['string', 'path']]
+#     18: "SSH_FXP_RENAME",  # [['uint32', 'id'], ['string', 'oldpath'], ['string', 'newpath']]
+#     19: "SSH_FXP_READLINK",  # [['uint32', 'id'], ['string', 'path']]
+#     20: "SSH_FXP_SYMLINK",  # [['uint32', 'id'], ['string', 'linkpath'], ['string', 'targetpath']]
+#     101: "SSH_FXP_STATUS",
+#     # [['uint32', 'id'], ['uint32', 'error_code'], ['string', 'error_message'], ['string', 'language']]
+#     102: "SSH_FXP_HANDLE",  # [['uint32', 'id'], ['string', 'handle']]
+#     103: "SSH_FXP_DATA",  # [['uint32', 'id'], ['string', 'data']]
+#     104: "SSH_FXP_NAME",
+#     # [['uint32', 'id'], ['uint32', 'count'], [['string', 'filename'], ['string', 'longname'], ['ATTRS', 'attrs']]]
+#     105: "SSH_FXP_ATTRS",  # [['uint32', 'id'], ['ATTRS', 'attrs']]
+#     200: "SSH_FXP_EXTENDED",  # []
+#     201: "SSH_FXP_EXTENDED_REPLY",  # []
+# }
 
-    packetLayout = {
-        1: "SSH_FXP_INIT",
-        # ['uint32', 'version'], [['string', 'extension_name'], ['string', 'extension_data']]]
-        2: "SSH_FXP_VERSION",
-        # [['uint32', 'version'], [['string', 'extension_name'], ['string', 'extension_data']]]
-        3: "SSH_FXP_OPEN",
-        # [['uint32', 'id'], ['string', 'filename'], ['uint32', 'pflags'], ['ATTRS', 'attrs']]
-        4: "SSH_FXP_CLOSE",  # [['uint32', 'id'], ['string', 'handle']]
-        5: "SSH_FXP_READ",  # [['uint32', 'id'], ['string', 'handle'], ['uint64', 'offset'], ['uint32', 'len']]
-        6: "SSH_FXP_WRITE",
-        # [['uint32', 'id'], ['string', 'handle'], ['uint64', 'offset'], ['string', 'data']]
-        7: "SSH_FXP_LSTAT",  # [['uint32', 'id'], ['string', 'path']]
-        8: "SSH_FXP_FSTAT",  # [['uint32', 'id'], ['string', 'handle']]
-        9: "SSH_FXP_SETSTAT",  # [['uint32', 'id'], ['string', 'path'], ['ATTRS', 'attrs']]
-        10: "SSH_FXP_FSETSTAT",  # [['uint32', 'id'], ['string', 'handle'], ['ATTRS', 'attrs']]
-        11: "SSH_FXP_OPENDIR",  # [['uint32', 'id'], ['string', 'path']]
-        12: "SSH_FXP_READDIR",  # [['uint32', 'id'], ['string', 'handle']]
-        13: "SSH_FXP_REMOVE",  # [['uint32', 'id'], ['string', 'filename']]
-        14: "SSH_FXP_MKDIR",  # [['uint32', 'id'], ['string', 'path'], ['ATTRS', 'attrs']]
-        15: "SSH_FXP_RMDIR",  # [['uint32', 'id'], ['string', 'path']]
-        16: "SSH_FXP_REALPATH",  # [['uint32', 'id'], ['string', 'path']]
-        17: "SSH_FXP_STAT",  # [['uint32', 'id'], ['string', 'path']]
-        18: "SSH_FXP_RENAME",  # [['uint32', 'id'], ['string', 'oldpath'], ['string', 'newpath']]
-        19: "SSH_FXP_READLINK",  # [['uint32', 'id'], ['string', 'path']]
-        20: "SSH_FXP_SYMLINK",  # [['uint32', 'id'], ['string', 'linkpath'], ['string', 'targetpath']]
-        101: "SSH_FXP_STATUS",
-        # [['uint32', 'id'], ['uint32', 'error_code'], ['string', 'error_message'], ['string', 'language']]
-        102: "SSH_FXP_HANDLE",  # [['uint32', 'id'], ['string', 'handle']]
-        103: "SSH_FXP_DATA",  # [['uint32', 'id'], ['string', 'data']]
-        104: "SSH_FXP_NAME",
-        # [['uint32', 'id'], ['uint32', 'count'], [['string', 'filename'], ['string', 'longname'], ['ATTRS', 'attrs']]]
-        105: "SSH_FXP_ATTRS",  # [['uint32', 'id'], ['ATTRS', 'attrs']]
-        200: "SSH_FXP_EXTENDED",  # []
-        201: "SSH_FXP_EXTENDED_REPLY",  # []
-    }
+
+class SFTP(base_protocol.BaseProtocol):
+    prevID: int = 0
+    ID: int = 0
+    handle: bytes = b""
+    path: bytes = b""
+    command: bytes = b""
+    payloadSize: int = 0
+    payloadOffset: int = 0
+    theFile: bytes = b""
+    parentPacket: base_protocol.BaseProtocol
 
     def __init__(self, uuid, chan_name, ssh):
         super().__init__(uuid, chan_name, ssh)
@@ -83,123 +88,123 @@ class SFTP(base_protocol.BaseProtocol):
         self.clientPacket = base_protocol.BaseProtocol()
         self.serverPacket = base_protocol.BaseProtocol()
 
-        self.parent = None
-        self.parentPacket = None
-        self.offset = 0
+        self.parent: str
+        self.offset: int = 0
 
-    def parse_packet(self, parent, payload):
+    def parse_packet(self, parent: str, data: bytes) -> None:
         self.parent = parent
 
         if parent == "[SERVER]":
             self.parentPacket = self.serverPacket
         elif parent == "[CLIENT]":
             self.parentPacket = self.clientPacket
+        else:
+            raise ValueError
 
         if self.parentPacket.packetSize == 0:
-            self.parentPacket.packetSize = int(payload[:4].hex(), 16) - len(payload[4:])
-            payload = payload[4:]
-            self.parentPacket.data = payload
-            payload = ""
+            self.parentPacket.packetSize = int(data[:4].hex(), 16) - len(data[4:])
+            data = data[4:]
+            self.parentPacket.data = data
+            data = b""
 
         else:
-            if len(payload) > self.parentPacket.packetSize:
+            if len(data) > self.parentPacket.packetSize:
                 self.parentPacket.data = (
-                    self.parentPacket.data + payload[: self.parentPacket.packetSize]
+                    self.parentPacket.data + data[: self.parentPacket.packetSize]
                 )
-                payload = payload[self.parentPacket.packetSize :]
+                data = data[self.parentPacket.packetSize :]
                 self.parentPacket.packetSize = 0
             else:
-                self.parentPacket.packetSize -= len(payload)
-                self.parentPacket.data = self.parentPacket.data + payload
-                payload = ""
+                self.parentPacket.packetSize -= len(data)
+                self.parentPacket.data = self.parentPacket.data + data
+                data = b""
 
         if self.parentPacket.packetSize == 0:
             self.handle_packet(parent)
 
-        if len(payload) != 0:
-            self.parse_packet(parent, payload)
+        if len(data) != 0:
+            self.parse_packet(parent, data)
 
-    def handle_packet(self, parent):
-        self.packetSize = self.parentPacket.packetSize
-        self.data = self.parentPacket.data
+    def handle_packet(self, parent: str) -> None:
+        self.packetSize: int = self.parentPacket.packetSize
+        self.data: bytes = self.parentPacket.data
+        self.command: bytes
 
-        sftp_num = self.extract_int(1)
-        packet = self.packetLayout[sftp_num]
+        sftp_num: int = self.extract_int(1)
 
-        self.prevID = self.ID
-        self.ID = self.extract_int(4)
+        self.prevID: int = self.ID
+        self.ID: int = self.extract_int(4)
 
-        if packet == "SSH_FXP_OPENDIR":
+        self.path: bytes = b""
+
+        if sftp_num == filetransfer.FXP_OPENDIR:
             self.path = self.extract_string()
 
-        elif packet == "SSH_FXP_REALPATH":
+        elif sftp_num == filetransfer.FXP_REALPATH:
             self.path = self.extract_string()
             self.command = b"cd " + self.path
             log.msg(parent + "[SFTP] Entered Command: " + self.command.decode())
 
-        elif packet == "SSH_FXP_OPEN":
+        elif sftp_num == filetransfer.FXP_OPEN:
             self.path = self.extract_string()
-            pflags = "{:08b}".format(self.extract_int(4))
+            pflags = f"{self.extract_int(4):08b}"
 
             if pflags[6] == "1":
                 self.command = b"put " + self.path
-                self.theFile = ""
+                self.theFile = b""
                 # self.out.download_started(self.uuid, self.path)
             elif pflags[7] == "1":
                 self.command = b"get " + self.path
             else:
                 # Unknown PFlag
                 log.msg(
-                    parent + f"[SFTP] New SFTP pflag detected: {pflags} {self.data}"
+                    parent + f"[SFTP] New SFTP pflag detected: {pflags!r} {self.data!r}"
                 )
 
             log.msg(parent + " [SFTP] Entered Command: " + self.command.decode())
 
-        elif packet == "SSH_FXP_READ":
+        elif sftp_num == filetransfer.FXP_READ:
             pass
 
-        elif packet == "SSH_FXP_WRITE":
+        elif sftp_num == filetransfer.FXP_WRITE:
             if self.handle == self.extract_string():
                 self.offset = self.extract_int(8)
-                self.theFile = (
-                    self.theFile[: self.offset].encode() + self.extract_data()
-                )
+                self.theFile = self.theFile[: self.offset] + self.extract_data()
 
-        elif packet == "SSH_FXP_HANDLE":
+        elif sftp_num == filetransfer.FXP_HANDLE:
             if self.ID == self.prevID:
                 self.handle = self.extract_string()
 
-        elif packet == "SSH_FXP_READDIR":
+        elif sftp_num == filetransfer.FXP_READDIR:
             if self.handle == self.extract_string():
                 self.command = b"ls " + self.path
 
-        elif packet == "SSH_FXP_SETSTAT":
+        elif sftp_num == filetransfer.FXP_SETSTAT:
             self.path = self.extract_string()
-            self.command = self.extract_attrs() + " " + self.path
+            self.command = self.extract_attrs() + b" " + self.path
 
-        elif packet == "SSH_FXP_EXTENDED":
+        elif sftp_num == filetransfer.FXP_EXTENDED:
             cmd = self.extract_string()
             self.path = self.extract_string()
 
-            if cmd == "statvfs@openssh.com":
+            if cmd == b"statvfs@openssh.com":
                 self.command = b"df " + self.path
-            elif cmd == "hardlink@openssh.com":
+            elif cmd == b"hardlink@openssh.com":
                 self.command = b"ln " + self.path + b" " + self.extract_string()
-            elif cmd == "posix-rename@openssh.com":
+            elif cmd == b"posix-rename@openssh.com":
                 self.command = b"mv " + self.path + b" " + self.extract_string()
             else:
                 # UNKNOWN COMMAND
                 log.msg(
                     parent
-                    + "[SFTP] New SFTP Extended Command detected: %s %s"
-                    % (cmd, self.data)
+                    + f"[SFTP] New SFTP Extended Command detected: {cmd!r} {self.data!r}"
                 )
 
-        elif packet == "SSH_FXP_EXTENDED_REPLY":
-            log.msg(parent + "[SFTP] Entered Command: " + self.command.decode())
+        elif sftp_num == filetransfer.FXP_EXTENDED_REPLY:
+            log.msg(parent + " [SFTP] Entered Command: " + self.command.decode())
             # self.out.command_entered(self.uuid, self.command)
 
-        elif packet == "SSH_FXP_CLOSE":
+        elif sftp_num == filetransfer.FXP_CLOSE:
             if self.handle == self.extract_string():
                 if b"get" in self.command:
                     log.msg(
@@ -219,21 +224,21 @@ class SFTP(base_protocol.BaseProtocol):
                     #     f.close()
                     #     #self.out.file_downloaded((self.uuid, True, self.path, outfile, None))
 
-        elif packet == "SSH_FXP_SYMLINK":
+        elif sftp_num == filetransfer.FXP_SYMLINK:
             self.command = (
                 b"ln -s " + self.extract_string() + b" " + self.extract_string()
             )
 
-        elif packet == "SSH_FXP_MKDIR":
+        elif sftp_num == filetransfer.FXP_MKDIR:
             self.command = b"mkdir " + self.extract_string()
 
-        elif packet == "SSH_FXP_REMOVE":
+        elif sftp_num == filetransfer.FXP_REMOVE:
             self.command = b"rm " + self.extract_string()
 
-        elif packet == "SSH_FXP_RMDIR":
+        elif sftp_num == filetransfer.FXP_RMDIR:
             self.command = b"rmdir " + self.extract_string()
 
-        elif packet == "SSH_FXP_STATUS":
+        elif sftp_num == filetransfer.FXP_STATUS:
             if self.ID == self.prevID:
                 code = self.extract_int(4)
                 if code in [0, 1]:
@@ -248,15 +253,17 @@ class SFTP(base_protocol.BaseProtocol):
                         + " [SFTP] Failed Command: "
                         + self.command.decode()
                         + " Reason: "
-                        + message
+                        + message.decode()
                     )
+        else:
+            log.msg("[SFTP] Unhandled packet: {sftp_num}")
 
-    def extract_attrs(self):
-        cmd = ""
-        flags = "{:08b}".format(self.extract_int(4))
+    def extract_attrs(self) -> bytes:
+        cmd: str = ""
+        flags: str = f"{self.extract_int(4):08b}"
 
         if flags[5] == "1":
-            perms = "{:09b}".format(self.extract_int(4))
+            perms = f"{self.extract_int(4):09b}"
             # log.msg(log.LPURPLE, self.parent + '[SFTP]', 'PERMS:' + perms)
             chmod = (
                 str(int(perms[:3], 2))
@@ -274,7 +281,7 @@ class SFTP(base_protocol.BaseProtocol):
             # log.msg(log.LRED, self.parent + '[SFTP]',
             #         'New SFTP Attribute detected - Please raise a HonSSH issue on github with the details: %s %s' %
             #         (flags, self.data))
-        return cmd
+        return cmd.encode()
 
 
 """

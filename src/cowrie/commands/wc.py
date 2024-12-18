@@ -5,7 +5,7 @@
 """
 This module contains the wc commnad
 """
-
+from __future__ import annotations
 
 import getopt
 import re
@@ -17,12 +17,12 @@ from cowrie.shell.command import HoneyPotCommand
 commands = {}
 
 
-class command_wc(HoneyPotCommand):
+class Command_wc(HoneyPotCommand):
     """
     wc command
     """
 
-    def version(self):
+    def version(self) -> None:
         self.writeBytes(b"wc (GNU coreutils) 8.30\n")
         self.writeBytes(b"Copyright (C) 2018 Free Software Foundation, Inc.\n")
         self.writeBytes(
@@ -35,7 +35,7 @@ class command_wc(HoneyPotCommand):
         self.writeBytes(b"\n")
         self.writeBytes(b"Written by Paul Rubin and David MacKenzie.\n")
 
-    def help(self):
+    def help(self) -> None:
         self.writeBytes(b"Usage: wc [OPTION]... [FILE]...\n")
         self.writeBytes(
             b"Print newline, word, and byte counts for each FILE, and a total line if\n"
@@ -60,31 +60,31 @@ class command_wc(HoneyPotCommand):
         self.writeBytes(b"\t-h\tdisplay this help and exit\n")
         self.writeBytes(b"\t-v\toutput version information and exit\n")
 
-    def wc_get_contents(self, filename, optlist):
+    def wc_get_contents(self, filename: str, optlist: list[tuple[str, str]]) -> None:
         try:
             contents = self.fs.file_contents(filename)
             self.wc_application(contents, optlist)
         except Exception:
             self.errorWrite(f"wc: {filename}: No such file or directory\n")
 
-    def wc_application(self, contents, optlist):
-        for opt, arg in optlist:
+    def wc_application(self, contents: bytes, optlist: list[tuple[str, str]]) -> None:
+        for opt, _arg in optlist:
             if opt == "-l":
                 contentsplit = contents.split(b"\n")
-                self.write("{}\n".format(len(contentsplit) - 1))
+                self.write(f"{len(contentsplit) - 1}\n")
             elif opt == "-w":
-                contentsplit = re.sub(
-                    " +", " ", contents.decode().strip("\n").strip()
-                ).split(" ")
-                self.write("{}\n".format(len(contentsplit)))
+                contentsplit = re.sub(b" +", b" ", contents.strip(b"\n").strip()).split(
+                    b" "
+                )
+                self.write(f"{len(contentsplit)}\n")
             elif opt == "-m" or opt == "-c":
-                self.write("{}\n".format(len(contents)))
+                self.write(f"{len(contents)}\n")
             elif opt == "-v":
                 self.version()
             else:
                 self.help()
 
-    def start(self):
+    def start(self) -> None:
         if not self.args:
             self.exit()
             return
@@ -118,7 +118,7 @@ class command_wc(HoneyPotCommand):
 
         self.exit()
 
-    def lineReceived(self, line):
+    def lineReceived(self, line: str) -> None:
         log.msg(
             eventid="cowrie.command.input",
             realm="wc",
@@ -126,10 +126,10 @@ class command_wc(HoneyPotCommand):
             format="INPUT (%(realm)s): %(input)s",
         )
 
-    def handle_CTRL_D(self):
+    def handle_CTRL_D(self) -> None:
         self.exit()
 
 
-commands["/usr/bin/wc"] = command_wc
-commands["/bin/wc"] = command_wc
-commands["wc"] = command_wc
+commands["/usr/bin/wc"] = Command_wc
+commands["/bin/wc"] = Command_wc
+commands["wc"] = Command_wc

@@ -4,6 +4,7 @@
 """
 This module contains the python commnad
 """
+from __future__ import annotations
 
 
 import getopt
@@ -15,12 +16,12 @@ from cowrie.shell.command import HoneyPotCommand
 commands = {}
 
 
-class command_python(HoneyPotCommand):
-    def version(self):
+class Command_python(HoneyPotCommand):
+    def version(self) -> None:
         ver = "Python 2.7.11+"
         self.write(ver + "\n")
 
-    def help(self):
+    def help(self) -> None:
         output = (
             "usage: python [option] ... [-c cmd | -m mod | file | -] [arg] ...",
             "Options and arguments (and corresponding environment variables):",
@@ -70,7 +71,7 @@ class command_python(HoneyPotCommand):
         for line in output:
             self.write(line + "\n")
 
-    def start(self):
+    def start(self) -> None:
         try:
             opts, args = getopt.gnu_getopt(
                 self.args, "BdEhiORsStuvVx3c:m:Q:W:", ["help", "version"]
@@ -85,7 +86,7 @@ class command_python(HoneyPotCommand):
             return
 
         # Parse options
-        for o, a in opts:
+        for o, _a in opts:
             if o in "-V":
                 self.version()
                 self.exit()
@@ -109,17 +110,15 @@ class command_python(HoneyPotCommand):
             if self.fs.exists(sourcefile) or value == "-":
                 self.exit()
             else:
-
                 self.write(
-                    "python: can't open file '%s': [Errno 2] No such file or directory\n"
-                    % (value)
+                    f"python: can't open file '{value}': [Errno 2] No such file or directory\n"
                 )
                 self.exit()
 
         if not len(self.args):
             pass
 
-    def lineReceived(self, line):
+    def lineReceived(self, line: str) -> None:
         log.msg(
             eventid="cowrie.command.input",
             realm="python",
@@ -127,9 +126,9 @@ class command_python(HoneyPotCommand):
             format="INPUT (%(realm)s): %(input)s",
         )
 
-    def handle_CTRL_D(self):
+    def handle_CTRL_D(self) -> None:
         self.exit()
 
 
-commands["/usr/bin/python"] = command_python
-commands["python"] = command_python
+commands["/usr/bin/python"] = Command_python
+commands["python"] = Command_python

@@ -1,15 +1,16 @@
+from __future__ import annotations
 import json
 import string
 from random import choice
+
+from wokkel import muc
+from wokkel.client import XMPPClient
+from wokkel.xmppim import AvailablePresence
 
 from twisted.application import service
 from twisted.python import log
 from twisted.words.protocols.jabber import jid
 from twisted.words.protocols.jabber.jid import JID
-
-from wokkel import muc
-from wokkel.client import XMPPClient
-from wokkel.xmppim import AvailablePresence
 
 import cowrie.core.output
 from cowrie.core.config import CowrieConfig
@@ -81,14 +82,14 @@ class Output(cowrie.core.output.Output):
         self.anonymous = True
         self.xmppclient.startService()
 
-    def write(self, logentry):
-        for i in list(logentry.keys()):
+    def write(self, event):
+        for i in list(event.keys()):
             # Remove twisted 15 legacy keys
             if i.startswith("log_"):
-                del logentry[i]
+                del event[i]
             elif i == "time":
-                del logentry[i]
-        msgJson = json.dumps(logentry, indent=5)
+                del event[i]
+        msgJson = json.dumps(event, indent=5)
 
         self.muc.groupChat(self.muc.jrooms, msgJson)
 

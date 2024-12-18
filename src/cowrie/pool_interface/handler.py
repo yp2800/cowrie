@@ -1,6 +1,8 @@
 # Copyright (c) 2019 Guilherme Borges <guilhermerosasborges@gmail.com>
 # See the COPYRIGHT file for more information
 
+from __future__ import annotations
+
 import os
 
 from twisted.internet import reactor
@@ -26,10 +28,10 @@ class PoolHandler:
         self.cowrie_plugin = cowrie_plugin
 
         # connection details
-        self.pool_ip = pool_host
-        self.pool_port = pool_port
+        self.pool_ip: str = pool_host
+        self.pool_port: int = pool_port
 
-        self.pool_ready = False
+        self.pool_ready: bool = False
 
         self.client_factory = PoolClientFactory(self)
 

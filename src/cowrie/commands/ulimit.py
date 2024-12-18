@@ -5,6 +5,7 @@
 This module ...
 """
 
+from __future__ import annotations
 
 import getopt
 
@@ -13,14 +14,14 @@ from cowrie.shell.command import HoneyPotCommand
 commands = {}
 
 
-class command_ulimit(HoneyPotCommand):
+class Command_ulimit(HoneyPotCommand):
     """
     ulimit
 
     ulimit: usage: ulimit [-SHacdfilmnpqstuvx] [limit]
     """
 
-    def call(self):
+    def call(self) -> None:
         # Parse options or display no files
         try:
             opts, args = getopt.getopt(self.args, "SHacdfilmnpqstuvx")
@@ -43,4 +44,4 @@ class command_ulimit(HoneyPotCommand):
         pass
 
 
-commands["ulimit"] = command_ulimit
+commands["ulimit"] = Command_ulimit

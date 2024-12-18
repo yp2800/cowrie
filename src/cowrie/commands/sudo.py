@@ -1,3 +1,4 @@
+from __future__ import annotations
 import getopt
 
 from cowrie.shell.command import HoneyPotCommand
@@ -63,18 +64,18 @@ Options:
 )
 
 
-class command_sudo(HoneyPotCommand):
-    def short_help(self):
+class Command_sudo(HoneyPotCommand):
+    def short_help(self) -> None:
         for ln in sudo_shorthelp:
             self.errorWrite(f"{ln}\n")
         self.exit()
 
-    def long_help(self):
+    def long_help(self) -> None:
         for ln in sudo_longhelp:
             self.errorWrite(f"{ln}\n")
         self.exit()
 
-    def version(self):
+    def version(self) -> None:
         self.errorWrite(
             """Sudo version 1.8.5p2
             Sudoers policy plugin version 1.8.5p2
@@ -83,7 +84,7 @@ class command_sudo(HoneyPotCommand):
         )
         self.exit()
 
-    def start(self):
+    def start(self) -> None:
         start_value = None
         parsed_arguments = []
         for count in range(0, len(self.args)):
@@ -106,7 +107,7 @@ class command_sudo(HoneyPotCommand):
             self.short_help()
             return
 
-        for o, a in optlist:
+        for o, _a in optlist:
             if o in ("-V"):
                 self.version()
                 return
@@ -125,7 +126,7 @@ class command_sudo(HoneyPotCommand):
                 self.protocol.pp.insert_command(command)
                 # this needs to go here so it doesn't write it out....
                 if self.input_data:
-                    self.write(self.input_data)
+                    self.writeBytes(self.input_data)
                 self.exit()
             else:
                 self.short_help()
@@ -133,4 +134,4 @@ class command_sudo(HoneyPotCommand):
             self.short_help()
 
 
-commands["sudo"] = command_sudo
+commands["sudo"] = Command_sudo

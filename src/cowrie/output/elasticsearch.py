@@ -1,7 +1,8 @@
 # Simple elasticsearch logger
 
+from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any
 
 from elasticsearch import Elasticsearch, NotFoundError
 
@@ -16,6 +17,7 @@ class Output(cowrie.core.output.Output):
 
     index: str
     pipeline: str
+    es: Any
 
     def start(self):
         host = CowrieConfig.get("output_elasticsearch", "host")
@@ -32,7 +34,7 @@ class Output(cowrie.core.output.Output):
             "output_elasticsearch", "verify_certs", fallback=True
         )
 
-        options: Dict[str, Any] = {}
+        options: dict[str, Any] = {}
         # connect
         if (username is not None) and (password is not None):
             options["http_auth"] = (username, password)
@@ -62,7 +64,7 @@ class Output(cowrie.core.output.Output):
         This function check whether the index exists.
         """
         if not self.es.indices.exists(index=self.index):
-            #  create index
+            # create index
             self.es.indices.create(index=self.index)
 
     def check_geoip_mapping(self):
@@ -112,12 +114,12 @@ class Output(cowrie.core.output.Output):
     def stop(self):
         pass
 
-    def write(self, logentry):
-        for i in list(logentry.keys()):
+    def write(self, event):
+        for i in list(event.keys()):
             # remove twisted 15 legacy keys
             if i.startswith("log_"):
-                del logentry[i]
+                del event[i]
 
         self.es.index(
-            index=self.index, doc_type=self.type, body=logentry, pipeline=self.pipeline
+            index=self.index, doc_type=self.type, body=event, pipeline=self.pipeline
         )

@@ -30,6 +30,7 @@
 Send SSH logins to Virustotal
 """
 
+from __future__ import annotations
 
 import datetime
 import json
@@ -37,13 +38,13 @@ import os
 from typing import Any
 from urllib.parse import urlencode, urlparse
 
-from twisted.internet import defer, reactor
-from twisted.internet.ssl import ClientContextFactory
+from zope.interface import implementer
+
+from twisted.internet import defer
+from twisted.internet import reactor
 from twisted.python import log
 from twisted.web import client, http_headers
 from twisted.web.iweb import IBodyProducer
-
-from zope.interface import implementer
 
 import cowrie.core.output
 from cowrie.core.config import CowrieConfig
@@ -65,11 +66,14 @@ class Output(cowrie.core.output.Output):
     agent: Any
     scan_url: bool
     scan_file: bool
+    url_cache: dict[str, datetime.datetime]  # url and last time succesfully submitted
 
-    def start(self):
+    def start(self) -> None:
         """
         Start output plugin
         """
+        self.url_cache = {}
+
         self.apiKey = CowrieConfig.get("output_virustotal", "api_key")
         self.debug = CowrieConfig.getboolean(
             "output_virustotal", "debug", fallback=False
@@ -89,27 +93,26 @@ class Output(cowrie.core.output.Output):
         self.commenttext = CowrieConfig.get(
             "output_virustotal", "commenttext", fallback=COMMENT
         )
-        self.agent = client.Agent(reactor, WebClientContextFactory())
+        self.agent = client.Agent(reactor)
 
-    def stop(self):
+    def stop(self) -> None:
         """
         Stop output plugin
         """
-        pass
 
-    def write(self, entry: dict) -> None:
-        if entry["eventid"] == "cowrie.session.file_download":
-            if self.scan_url and "url" in entry:
+    def write(self, event: dict[str, Any]) -> None:
+        if event["eventid"] == "cowrie.session.file_download":
+            if self.scan_url and "url" in event:
                 log.msg("Checking url scan report at VT")
-                self.scanurl(entry)
-            if self._is_new_shasum(entry["shasum"]) and self.scan_file:
+                self.scanurl(event)
+            if self._is_new_shasum(event["shasum"]) and self.scan_file:
                 log.msg("Checking file scan report at VT")
-                self.scanfile(entry)
+                self.scanfile(event)
 
-        elif entry["eventid"] == "cowrie.session.file_upload":
-            if self._is_new_shasum(entry["shasum"]) and self.scan_file:
+        elif event["eventid"] == "cowrie.session.file_upload":
+            if self._is_new_shasum(event["shasum"]) and self.scan_file:
                 log.msg("Checking file scan report at VT")
-                self.scanfile(entry)
+                self.scanfile(event)
 
     def _is_new_shasum(self, shasum):
         # Get the downloaded file's modification time
@@ -130,14 +133,14 @@ class Output(cowrie.core.output.Output):
             return False
         return True
 
-    def scanfile(self, entry):
+    def scanfile(self, event):
         """
         Check file scan report for a hash
         Argument is full event so we can access full file later on
         """
-        vtUrl = f"{VTAPI_URL}file/report".encode("utf8")
+        vtUrl = f"{VTAPI_URL}file/report".encode()
         headers = http_headers.Headers({"User-Agent": [COWRIE_USER_AGENT]})
-        fields = {"apikey": self.apiKey, "resource": entry["shasum"], "allinfo": 1}
+        fields = {"apikey": self.apiKey, "resource": event["shasum"], "allinfo": 1}
         body = StringProducer(urlencode(fields).encode("utf-8"))
         d = self.agent.request(b"POST", vtUrl, headers, body)
 
@@ -150,7 +153,7 @@ class Output(cowrie.core.output.Output):
                 d.addCallback(cbBody)
                 return d
             else:
-                log.msg(f"VT Request failed: {response.code} {response.phrase}")
+                log.msg(f"VT scanfile failed: {response.code} {response.phrase}")
 
         def cbBody(body):
             """
@@ -181,28 +184,28 @@ class Output(cowrie.core.output.Output):
                 log.msg(
                     eventid="cowrie.virustotal.scanfile",
                     format="VT: New file %(sha256)s",
-                    session=entry["session"],
+                    session=event["session"],
                     sha256=j["resource"],
                     is_new="true",
                 )
 
                 try:
-                    b = os.path.basename(urlparse(entry["url"]).path)
+                    b = os.path.basename(urlparse(event["url"]).path)
                     if b == "":
-                        fileName = entry["shasum"]
+                        fileName = event["shasum"]
                     else:
                         fileName = b
                 except KeyError:
-                    fileName = entry["shasum"]
+                    fileName = event["shasum"]
 
                 if self.upload is True:
-                    return self.postfile(entry["outfile"], fileName)
+                    return self.postfile(event["outfile"], fileName)
                 else:
                     return
             elif j["response_code"] == 1:
                 log.msg("VT: response=1: this has been scanned before")
                 # Add detailed report to json log
-                scans_summary = {}
+                scans_summary: dict[str, dict[str, str]] = {}
                 for feed, info in j["scans"].items():
                     feed_key = feed.lower()
                     scans_summary[feed_key] = {}
@@ -212,7 +215,7 @@ class Output(cowrie.core.output.Output):
                     eventid="cowrie.virustotal.scanfile",
                     format="VT: Binary file with sha256 %(sha256)s was found malicious "
                     "by %(positives)s out of %(total)s feeds (scanned on %(scan_date)s)",
-                    session=entry["session"],
+                    session=event["session"],
                     positives=j["positives"],
                     total=j["total"],
                     scan_date=j["scan_date"],
@@ -234,11 +237,11 @@ class Output(cowrie.core.output.Output):
         """
         Send a file to VirusTotal
         """
-        vtUrl = f"{VTAPI_URL}file/scan".encode("utf8")
+        vtUrl = f"{VTAPI_URL}file/scan".encode()
         fields = {("apikey", self.apiKey)}
         files = {("file", fileName, open(artifact, "rb"))}
         if self.debug:
-            log.msg("submitting to VT: {}".format(repr(files)))
+            log.msg(f"submitting to VT: {files!r}")
         contentType, body = encode_multipart_formdata(fields, files)
         producer = StringProducer(body)
         headers = http_headers.Headers(
@@ -267,7 +270,7 @@ class Output(cowrie.core.output.Output):
                 d.addErrback(cbPartial)
                 return d
             else:
-                log.msg(f"VT Request failed: {response.code} {response.phrase}")
+                log.msg(f"VT postfile failed: {response.code} {response.phrase}")
 
         def cbError(failure):
             failure.printTraceback()
@@ -289,15 +292,23 @@ class Output(cowrie.core.output.Output):
         d.addErrback(cbError)
         return d
 
-    def scanurl(self, entry):
+    def scanurl(self, event):
         """
         Check url scan report for a hash
         """
-        vtUrl = f"{VTAPI_URL}url/report".encode("utf8")
+        if event["url"] in self.url_cache:
+            log.msg(
+                "output_virustotal: url {} was already successfully submitted".format(
+                    event["url"]
+                )
+            )
+            return
+
+        vtUrl = f"{VTAPI_URL}url/report".encode()
         headers = http_headers.Headers({"User-Agent": [COWRIE_USER_AGENT]})
         fields = {
             "apikey": self.apiKey,
-            "resource": entry["url"],
+            "resource": event["url"],
             "scan": 1,
             "allinfo": 1,
         }
@@ -309,11 +320,12 @@ class Output(cowrie.core.output.Output):
             Main response callback, checks HTTP response code
             """
             if response.code == 200:
+                log.msg(f"VT scanurl successful: {response.code} {response.phrase}")
                 d = client.readBody(response)
                 d.addCallback(cbBody)
                 return d
             else:
-                log.msg(f"VT Request failed: {response.code} {response.phrase}")
+                log.msg(f"VT scanurl failed: {response.code} {response.phrase}")
 
         def cbBody(body):
             """
@@ -337,16 +349,21 @@ class Output(cowrie.core.output.Output):
             """
             if self.debug:
                 log.msg(f"VT scanurl result: {result}")
+            if result == b"[]\n":
+                log.err(f"VT scanurl did not return results: {result}")
+                return
             result = result.decode("utf8")
             j = json.loads(result)
-            log.msg("VT: {}".format(j["verbose_msg"]))
+
+            # we got a status=200 assume it was successfully submitted
+            self.url_cache[event["url"]] = datetime.datetime.now()
 
             if j["response_code"] == 0:
                 log.msg(
                     eventid="cowrie.virustotal.scanurl",
                     format="VT: New URL %(url)s",
-                    session=entry["session"],
-                    url=entry["url"],
+                    session=event["session"],
+                    url=event["url"],
                     is_new="true",
                 )
                 return d
@@ -357,7 +374,7 @@ class Output(cowrie.core.output.Output):
             elif j["response_code"] == 1 and "scans" in j:
                 log.msg("VT: response=1: this has been scanned before")
                 # Add detailed report to json log
-                scans_summary = {}
+                scans_summary: dict[str, dict[str, str]] = {}
                 for feed, info in j["scans"].items():
                     feed_key = feed.lower()
                     scans_summary[feed_key] = {}
@@ -367,7 +384,7 @@ class Output(cowrie.core.output.Output):
                     eventid="cowrie.virustotal.scanurl",
                     format="VT: URL %(url)s was found malicious by "
                     "%(positives)s out of %(total)s feeds (scanned on %(scan_date)s)",
-                    session=entry["session"],
+                    session=event["session"],
                     positives=j["positives"],
                     total=j["total"],
                     scan_date=j["scan_date"],
@@ -377,7 +394,7 @@ class Output(cowrie.core.output.Output):
                 )
                 log.msg("VT: permalink: {}".format(j["permalink"]))
             elif j["response_code"] == -2:
-                log.msg("VT: response=1: this has been queued for analysis already")
+                log.msg("VT: response=-2: this has been queued for analysis already")
                 log.msg("VT: permalink: {}".format(j["permalink"]))
             else:
                 log.msg("VT: unexpected response code: {}".format(j["response_code"]))
@@ -390,7 +407,7 @@ class Output(cowrie.core.output.Output):
         """
         Send a comment to VirusTotal with Twisted
         """
-        vtUrl = f"{VTAPI_URL}comments/put".encode("utf8")
+        vtUrl = f"{VTAPI_URL}comments/put".encode()
         parameters = {
             "resource": resource,
             "comment": self.commenttext,
@@ -416,7 +433,7 @@ class Output(cowrie.core.output.Output):
                 d.addErrback(cbPartial)
                 return d
             else:
-                log.msg(f"VT Request failed: {response.code} {response.phrase}")
+                log.msg(f"VT postcomment failed: {response.code} {response.phrase}")
 
         def cbError(failure):
             failure.printTraceback()
@@ -431,11 +448,6 @@ class Output(cowrie.core.output.Output):
         d.addCallback(cbResponse)
         d.addErrback(cbError)
         return d
-
-
-class WebClientContextFactory(ClientContextFactory):
-    def getContext(self, hostname, port):
-        return ClientContextFactory.getContext(self)
 
 
 @implementer(IBodyProducer)
@@ -466,12 +478,12 @@ def encode_multipart_formdata(fields, files):
     """
     BOUNDARY = b"----------ThIs_Is_tHe_bouNdaRY_$"
     L = []
-    for (key, value) in fields:
+    for key, value in fields:
         L.append(b"--" + BOUNDARY)
         L.append(b'Content-Disposition: form-data; name="%s"' % key.encode())
         L.append(b"")
         L.append(value.encode())
-    for (key, filename, value) in files:
+    for key, filename, value in files:
         L.append(b"--" + BOUNDARY)
         L.append(
             b'Content-Disposition: form-data; name="%s"; filename="%s"'

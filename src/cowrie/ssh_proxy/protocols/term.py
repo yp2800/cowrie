@@ -26,6 +26,8 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
+from __future__ import annotations
+
 import os
 import time
 
@@ -40,20 +42,20 @@ class Term(base_protocol.BaseProtocol):
     def __init__(self, uuid, chan_name, ssh, channelId):
         super().__init__(uuid, chan_name, ssh)
 
-        self.command = b""
-        self.pointer = 0
-        self.tabPress = False
-        self.upArrow = False
+        self.command: bytes = b""
+        self.pointer: int = 0
+        self.tabPress: bool = False
+        self.upArrow: bool = False
 
-        self.transportId = ssh.server.transportId
-        self.channelId = channelId
+        self.transportId: int = ssh.server.transportId
+        self.channelId: int = channelId
 
-        self.startTime = time.time()
-        self.ttylogPath = CowrieConfig.get("honeypot", "ttylog_path")
-        self.ttylogEnabled = CowrieConfig.getboolean(
+        self.startTime: float = time.time()
+        self.ttylogPath: str = CowrieConfig.get("honeypot", "ttylog_path")
+        self.ttylogEnabled: bool = CowrieConfig.getboolean(
             "honeypot", "ttylog", fallback=True
         )
-        self.ttylogSize = 0
+        self.ttylogSize: int = 0
 
         if self.ttylogEnabled:
             self.ttylogFile = "{}/{}-{}-{}i.log".format(
@@ -61,7 +63,7 @@ class Term(base_protocol.BaseProtocol):
             )
             ttylog.ttylog_open(self.ttylogFile, self.startTime)
 
-    def channel_closed(self):
+    def channel_closed(self) -> None:
         if self.ttylogEnabled:
             ttylog.ttylog_close(self.ttylogFile, time.time())
             shasum = ttylog.ttylog_inputhash(self.ttylogFile)
@@ -87,8 +89,8 @@ class Term(base_protocol.BaseProtocol):
                 duration=time.time() - self.startTime,
             )
 
-    def parse_packet(self, parent, payload):
-        self.data = payload
+    def parse_packet(self, parent: str, data: bytes) -> None:
+        self.data: bytes = data
 
         if parent == "[SERVER]":
             while len(self.data) > 0:
@@ -115,12 +117,16 @@ class Term(base_protocol.BaseProtocol):
                         self.command += b"^C"
 
                     self.data = self.data[1:]
-                    if self.command != b"":
-                        log.msg(
-                            eventid="cowrie.command.input",
-                            input=self.command.decode("ascii"),
-                            format="CMD: %(input)s",
-                        )
+
+                    try:
+                        if self.command != b"":
+                            log.msg(
+                                eventid="cowrie.command.input",
+                                input=self.command.decode("utf8"),
+                                format="CMD: %(input)s",
+                            )
+                    except UnicodeDecodeError:
+                        log.err(f"Unusual execcmd: {self.command!r}")
 
                     self.command = b""
                     self.pointer = 0
@@ -158,13 +164,13 @@ class Term(base_protocol.BaseProtocol):
                     self.data = self.data[1:]
 
             if self.ttylogEnabled:
-                self.ttylogSize += len(payload)
+                self.ttylogSize += len(data)
                 ttylog.ttylog_write(
                     self.ttylogFile,
-                    len(payload),
+                    len(data),
                     ttylog.TYPE_OUTPUT,
                     time.time(),
-                    payload,
+                    data,
                 )
 
         elif parent == "[CLIENT]":
@@ -192,7 +198,7 @@ class Term(base_protocol.BaseProtocol):
                     elif self.data[:3] == b"\x1b\x5b\x43":
                         self.pointer += 1
                         self.data = self.data[3:]
-                    elif self.data[:2] == b"\x1b\x5b" and self.data[3] == b"\x50":
+                    elif self.data[:2] == b"\x1b\x5b" and self.data[3:3] == b"\x50":
                         self.data = self.data[4:]
                     # Needed?!
                     elif self.data[:1] != b"\x07" and self.data[:1] != b"\x0d":
@@ -210,11 +216,11 @@ class Term(base_protocol.BaseProtocol):
                 self.upArrow = False
 
             if self.ttylogEnabled:
-                self.ttylogSize += len(payload)
+                self.ttylogSize += len(data)
                 ttylog.ttylog_write(
                     self.ttylogFile,
-                    len(payload),
+                    len(data),
                     ttylog.TYPE_INPUT,
                     time.time(),
-                    payload,
+                    data,
                 )

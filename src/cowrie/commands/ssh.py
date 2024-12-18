@@ -2,18 +2,23 @@
 # See the COPYRIGHT file for more information
 
 
+from __future__ import annotations
+
 import getopt
 import hashlib
 import re
 import socket
 import time
-from typing import Callable, List
 
 from twisted.internet import reactor
 from twisted.python import log
 
 from cowrie.core.config import CowrieConfig
 from cowrie.shell.command import HoneyPotCommand
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 commands = {}
 
@@ -29,28 +34,31 @@ OUTPUT = [
 ]
 
 
-class command_ssh(HoneyPotCommand):
+class Command_ssh(HoneyPotCommand):
     """
     ssh
     """
 
     host: str
-    callbacks: List[Callable]
+    callbacks: list[Callable]
 
-    def valid_ip(self, address):
+    def valid_ip(self, address: str) -> bool:
         try:
             socket.inet_aton(address)
-            return True
         except Exception:
             return False
+        else:
+            return True
 
-    def start(self):
+    def start(self) -> None:
         try:
             options = "-1246AaCfgKkMNnqsTtVvXxYb:c:D:e:F:i:L:l:m:O:o:p:R:S:w:"
             optlist, args = getopt.getopt(self.args, options)
         except getopt.GetoptError:
             self.write("Unrecognized option\n")
             self.exit()
+            return
+
         for opt in optlist:
             if opt[0] == "-V":
                 self.write(
@@ -80,10 +88,8 @@ class command_ssh(HoneyPotCommand):
                 self.ip = host
             else:
                 self.write(
-                    "ssh: Could not resolve hostname {}: \
-                    Name or service not known\n".format(
-                        host
-                    )
+                    f"ssh: Could not resolve hostname {host}: \
+                    Name or service not known\n"
                 )
                 self.exit()
         else:
@@ -96,10 +102,8 @@ class command_ssh(HoneyPotCommand):
         self.user = user
 
         self.write(
-            "The authenticity of host '{} ({})' \
-            can't be established.\n".format(
-                self.host, self.ip
-            )
+            f"The authenticity of host '{self.host} ({self.ip})' \
+            can't be established.\n"
         )
         self.write(
             "RSA key fingerprint is \
@@ -108,46 +112,41 @@ class command_ssh(HoneyPotCommand):
         self.write("Are you sure you want to continue connecting (yes/no)? ")
         self.callbacks = [self.yesno, self.wait]
 
-    def yesno(self, line):
+    def yesno(self, line: str) -> None:
         self.write(
-            "Warning: Permanently added '{}' (RSA) to the \
-            list of known hosts.\n".format(
-                self.host
-            )
+            f"Warning: Permanently added '{self.host}' (RSA) to the \
+            list of known hosts.\n"
         )
         self.write(f"{self.user}@{self.host}'s password: ")
         self.protocol.password_input = True
 
-    def wait(self, line):
-        reactor.callLater(2, self.finish, line)
+    def wait(self, line: str) -> None:
+        reactor.callLater(2, self.finish, line)  # type: ignore[attr-defined]
 
-    def finish(self, line):
+    def finish(self, line: str) -> None:
         self.pause = False
-        rest, host = self.host, "localhost"
-        rest = self.host.strip().split(".")
-        if len(rest) and rest[0].isalpha():
-            host = rest[0]
+        rests = self.host.strip().split(".")
+        if len(rests) and rests[0].isalpha():
+            host = rests[0]
+        else:
+            host = "localhost"
         self.protocol.hostname = host
         self.protocol.cwd = "/root"
         if not self.fs.exists(self.protocol.cwd):
             self.protocol.cwd = "/"
         self.protocol.password_input = False
         self.write(
-            "Linux {} 2.6.26-2-686 #1 SMP Wed Nov 4 20:45:37 \
-            UTC 2009 i686\n".format(
-                self.protocol.hostname
-            )
+            f"Linux {self.protocol.hostname} 2.6.26-2-686 #1 SMP Wed Nov 4 20:45:37 \
+            UTC 2009 i686\n"
         )
-        self.write(
-            "Last login: {} from 192.168.9.4\n".format(time.ctime(time.time() - 123123))
-        )
+        self.write(f"Last login: {time.ctime(time.time() - 123123)} from 192.168.9.4\n")
         self.exit()
 
-    def lineReceived(self, line):
+    def lineReceived(self, line: str) -> None:
         log.msg("INPUT (ssh):", line)
         if len(self.callbacks):
             self.callbacks.pop(0)(line)
 
 
-commands["/usr/bin/ssh"] = command_ssh
-commands["ssh"] = command_ssh
+commands["/usr/bin/ssh"] = Command_ssh
+commands["ssh"] = Command_ssh

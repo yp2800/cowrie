@@ -1,3 +1,4 @@
+from __future__ import annotations
 import tftpy
 from tftpy.TftpPacketTypes import TftpPacketDAT, TftpPacketOACK
 
@@ -19,18 +20,18 @@ class Progress:
     def progresshook(self, pkt):
         if isinstance(pkt, TftpPacketDAT):
             self.progress += len(pkt.data)
-            self.out.write("Transferred %d bytes" % self.progress + "\n")
+            self.out.write(f"Transferred {self.progress} bytes\n")
         elif isinstance(pkt, TftpPacketOACK):
-            self.out.write("Received OACK, options are: %s" % pkt.options + "\n")
+            self.out.write(f"Received OACK, options are: {pkt.options}\n")
 
 
-class command_tftp(HoneyPotCommand):
-    port = 69
-    hostname = None
-    file_to_get = None
+class Command_tftp(HoneyPotCommand):
+    port: int = 69
+    hostname: str | None = None
+    file_to_get: str
     limit_size = CowrieConfig.getint("honeypot", "download_limit_size", fallback=0)
 
-    def makeTftpRetrieval(self):
+    def makeTftpRetrieval(self) -> None:
         progresshook = Progress(self).progresshook
 
         self.artifactFile = Artifact(self.file_to_get)
@@ -50,15 +51,21 @@ class command_tftp(HoneyPotCommand):
             self.file_to_get = self.fs.resolve_path(self.file_to_get, self.protocol.cwd)
 
             if hasattr(tclient.context, "metrics"):
-                self.fs.mkfile(
-                    self.file_to_get, 0, 0, tclient.context.metrics.bytes, 33188
-                )
+                size = tclient.context.metrics.bytes
             else:
-                self.fs.mkfile(self.file_to_get, 0, 0, 0, 33188)
-
+                size = 0
+            self.fs.mkfile(
+                self.file_to_get,
+                self.protocol.user.uid,
+                self.protocol.user.gid,
+                size,
+                33188,
+            )
         except tftpy.TftpException:
             if tclient and tclient.context and not tclient.context.fileobj.closed:
                 tclient.context.fileobj.close()
+
+        self.artifactFile.close()
 
         if url:
             # log to cowrie.log
@@ -86,7 +93,7 @@ class command_tftp(HoneyPotCommand):
                 self.file_to_get, self.protocol.user.uid, self.protocol.user.gid
             )
 
-    def start(self):
+    def start(self) -> None:
         parser = CustomParser(self)
         parser.prog = "tftp"
         parser.add_argument("hostname", nargs="?", default=None)
@@ -127,5 +134,5 @@ class command_tftp(HoneyPotCommand):
         self.exit()
 
 
-commands["/usr/bin/tftp"] = command_tftp
-commands["tftp"] = command_tftp
+commands["/usr/bin/tftp"] = Command_tftp
+commands["tftp"] = Command_tftp

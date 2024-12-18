@@ -6,6 +6,8 @@ It has its own emit() function and does not use cowrie eventid's
 to avoid circular calls
 """
 
+from __future__ import annotations
+
 
 import json
 
@@ -13,6 +15,7 @@ import treq
 
 from twisted.internet import defer
 from twisted.logger._levels import LogLevel
+from twisted.python import log
 
 import cowrie.core.output
 from cowrie._version import __version__
@@ -47,7 +50,7 @@ class Output(cowrie.core.output.Output):
         """
         pass
 
-    def write(self, entry):
+    def write(self, event):
         """
         events are done in emit() not in write()
         """
@@ -71,6 +74,6 @@ class Output(cowrie.core.output.Output):
             )
             content = yield r.text()
             if self.debug:
-                print("crashreport: " + content)
+                log.msg("crashreport: " + content)
         except Exception as e:
-            print("crashreporter failed" + repr(e))
+            log.msg("crashreporter failed" + repr(e))

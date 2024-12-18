@@ -27,6 +27,7 @@
 # SUCH DAMAGE.
 
 
+from __future__ import annotations
 import syslog
 
 import twisted.python.syslog
@@ -52,19 +53,22 @@ class Output(cowrie.core.output.Output):
     def stop(self):
         pass
 
-    def write(self, logentry):
-        if "isError" not in logentry:
-            logentry["isError"] = False
+    def write(self, event):
+        if "isError" not in event:
+            event["isError"] = False
+
+        if "system" not in event:
+            event["system"] = "cowrie"
 
         if self.format == "cef":
             self.syslog.emit(
                 {
-                    "message": [cowrie.core.cef.formatCef(logentry)],
+                    "message": [cowrie.core.cef.formatCef(event)],
                     "isError": False,
                     "system": "cowrie",
                 }
             )
         else:
             # message appears with additional spaces if message key is defined
-            logentry["message"] = [logentry["message"]]
-            self.syslog.emit(logentry)
+            event["message"] = [event["message"]]
+            self.syslog.emit(event)

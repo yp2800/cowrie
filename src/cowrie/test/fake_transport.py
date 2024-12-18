@@ -1,21 +1,26 @@
-# -*- test-case-name: Cowrie Test Cases -*-
-
 # Copyright (c) 2016 Dave Germiquet
 # See LICENSE for details.
 
-from typing import Callable, Dict, List, Optional, Set
+from __future__ import annotations
+
+from typing import ClassVar, TYPE_CHECKING
+
 
 from twisted.conch.insults import insults
 from twisted.test import proto_helpers
 
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE, N_COLORS = list(range(9))
+
 
 class Container:
-    """
-    This class is placeholder for creating a fake interface
+    """This class is placeholder for creating a fake interface.
+
     @var host Client fake information
     @var port Fake Port for connection
     @var otherVersionString version
-    @var
     """
 
     otherVersionString = "1.0"
@@ -23,39 +28,32 @@ class Container:
     id = "test-suite"
     sessionno = 1
     starttime = 0
-    session: Optional["Container"]
-    sessions: Dict[int, str] = {}
-    conn: Optional["Container"]
-    transport: Optional["Container"]
-    factory: Optional["Container"]
+    session: Container | None
+    sessions: ClassVar[dict[int, str]] = {}
+    conn: Container | None
+    transport: Container | None
+    factory: Container | None
 
     def getPeer(self):
-        """
-        Fake function for mockup
-        """
+        """Fake function for mockup."""
         self.host = "1.1.1.1"
         self.port = 2222
         return self
 
     def processEnded(self, reason):
-        """
-        Fake function for mockup
-        """
+        """Fake function for mockup."""
         pass
 
 
 class FakeTransport(proto_helpers.StringTransport):
-    """
-    Fake transport with abortConnection() method.
-    """
+    """Fake transport with abortConnection() method."""
 
     # Thanks to TerminalBuffer (some code was taken from twisted Terminal Buffer)
 
-    redirFiles: Set[List[str]] = set()
+    redirFiles: ClassVar[set[list[str]]] = set()
     width = 80
     height = 24
     void = object()
-    BLACK, RED, GREEN, YELLOW, BLUE, MAGENTA, CYAN, WHITE, N_COLORS = list(range(9))
 
     for keyID in (
         "UP_ARROW",
@@ -86,7 +84,7 @@ class FakeTransport(proto_helpers.StringTransport):
     TAB = "\x09"
     BACKSPACE = "\x08"
 
-    modes: Dict[str, Callable] = {}
+    modes: ClassVar[dict[str, Callable]] = {}
 
     # '\x01':     self.handle_HOME,	# CTRL-A
     # '\x02':     self.handle_LEFT,	# CTRL-B
@@ -107,17 +105,6 @@ class FakeTransport(proto_helpers.StringTransport):
             self.modes[m] = True
 
     aborting = False
-    transport = Container()
-    transport.session = Container()
-    transport.session.conn = Container()
-    transport.session.conn.transport = Container()
-    transport.session.conn.transport.transport = Container()
-    transport.session.conn.transport.transport.sessionno = 1
-    transport.session.conn.transport.factory = Container()
-    transport.session.conn.transport.factory.sessions = {}
-    transport.session.conn.transport.factory.starttime = 0
-    factory = Container()
-    session: Dict[str, str] = {}
 
     def abortConnection(self):
         self.aborting = True
@@ -130,8 +117,7 @@ class FakeTransport(proto_helpers.StringTransport):
                 pass
 
     def setPrivateModes(self, modes):
-        """
-        Enable the given modes.
+        """Enable the given modes.
 
         Track which modes have been enabled so that the implementations of
         other L{insults.ITerminalTransport} methods can be properly implemented
@@ -158,8 +144,8 @@ class FakeTransport(proto_helpers.StringTransport):
             "underline": False,
             "blink": False,
             "reverseVideo": False,
-            "foreground": self.WHITE,
-            "background": self.BLACK,
+            "foreground": WHITE,
+            "background": BLACK,
         }
         self.charsets = {
             insults.G0: insults.CS_US,
@@ -167,6 +153,20 @@ class FakeTransport(proto_helpers.StringTransport):
             insults.G2: insults.CS_ALTERNATE,
             insults.G3: insults.CS_ALTERNATE_SPECIAL,
         }
+
+    def clear(self):
+        proto_helpers.StringTransport.clear(self)
+        self.transport = Container()
+        self.transport.session = Container()
+        self.transport.session.conn = Container()
+        self.transport.session.conn.transport = Container()
+        self.transport.session.conn.transport.transport = Container()
+        self.transport.session.conn.transport.transport.sessionno = 1
+        self.transport.session.conn.transport.factory = Container()
+        self.transport.session.conn.transport.factory.sessions = {}
+        self.transport.session.conn.transport.factory.starttime = 0
+        self.factory = Container()
+        self.session: dict[str, str] = {}
         self.eraseDisplay()
 
     def eraseDisplay(self):

@@ -26,9 +26,12 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
+from __future__ import annotations
 
 import json
 import os
+
+from twisted.python import log
 
 import cowrie.core.output
 import cowrie.python.logfile
@@ -44,7 +47,7 @@ class Output(cowrie.core.output.Output):
         self.epoch_timestamp = CowrieConfig.getboolean(
             "output_jsonlog", "epoch_timestamp", fallback=False
         )
-        fn = CowrieConfig.get("output_jsonlog", "logfile")
+        fn = CowrieConfig.get("output_jsonlog", "logfile", fallback="cowrie.json")
         dirs = os.path.dirname(fn)
         base = os.path.basename(fn)
         self.outfile = cowrie.python.logfile.CowrieDailyLogFile(
@@ -52,18 +55,19 @@ class Output(cowrie.core.output.Output):
         )
 
     def stop(self):
-        self.outfile.flush()
+        if self.outfile:
+            self.outfile.flush()
 
-    def write(self, logentry):
+    def write(self, event):
         if self.epoch_timestamp:
-            logentry["epoch"] = int(logentry["time"] * 1000000 / 1000)
-        for i in list(logentry.keys()):
+            event["epoch"] = int(event["time"] * 1000000 / 1000)
+        for i in list(event.keys()):
             # Remove twisted 15 legacy keys
             if i.startswith("log_") or i == "time" or i == "system":
-                del logentry[i]
+                del event[i]
         try:
-            json.dump(logentry, self.outfile, separators=(",", ":"))
+            json.dump(event, self.outfile, separators=(",", ":"))
             self.outfile.write("\n")
             self.outfile.flush()
         except TypeError:
-            print("jsonlog: Can't serialize: '" + repr(logentry) + "'")
+            log.err("jsonlog: Can't serialize: '" + repr(event) + "'")

@@ -26,9 +26,14 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
+from __future__ import annotations
+
+from typing import Any
+
 import uuid
 
 from twisted.python import log
+from twisted.conch.ssh import connection, transport, userauth
 
 from cowrie.core.config import CowrieConfig
 from cowrie.ssh_proxy.protocols import (
@@ -40,96 +45,105 @@ from cowrie.ssh_proxy.protocols import (
 )
 from cowrie.ssh_proxy.util import int_to_hex, string_to_hex
 
+PACKETLAYOUT = transport.messages | connection.messages | userauth.SSHUserAuthServer.protocolMessages
+
+# PACKETLAYOUT = {
+#     1: "SSH_MSG_DISCONNECT",  # ['uint32', 'reason_code'], ['string', 'reason'], ['string', 'language_tag']
+#     2: "SSH_MSG_IGNORE",  # ['string', 'data']
+#     3: "SSH_MSG_UNIMPLEMENTED",  # ['uint32', 'seq_no']
+#     4: "SSH_MSG_DEBUG",  # ['boolean', 'always_display']
+#     5: "SSH_MSG_SERVICE_REQUEST",  # ['string', 'service_name']
+#     6: "SSH_MSG_SERVICE_ACCEPT",  # ['string', 'service_name']
+#     7: "SSH_MSG_EXT_INFO",  # ['TODO', 'TODO']
+#     20: "SSH_MSG_KEXINIT",  # ['string', 'service_name']
+#     21: "SSH_MSG_NEWKEYS",
+#     50: "SSH_MSG_USERAUTH_REQUEST",  # ['string', 'username'], ['string', 'service_name'], ['string', 'method_name']
+#     51: "SSH_MSG_USERAUTH_FAILURE",  # ['name-list', 'authentications'], ['boolean', 'partial_success']
+#     52: "SSH_MSG_USERAUTH_SUCCESS",  #
+#     53: "SSH_MSG_USERAUTH_BANNER",  # ['string', 'message'], ['string', 'language_tag']
+#     60: "SSH_MSG_USERAUTH_INFO_REQUEST",  # ['string', 'name'], ['string', 'instruction'],
+#     # ['string', 'language_tag'], ['uint32', 'num-prompts'],
+#     # ['string', 'prompt[x]'], ['boolean', 'echo[x]']
+#     61: "SSH_MSG_USERAUTH_INFO_RESPONSE",  # ['uint32', 'num-responses'], ['string', 'response[x]']
+#     80: "SSH_MSG_GLOBAL_REQUEST",  # ['string', 'request_name'], ['boolean', 'want_reply']  #tcpip-forward
+#     81: "SSH_MSG_REQUEST_SUCCESS",
+#     82: "SSH_MSG_REQUEST_FAILURE",
+#     90: "SSH_MSG_CHANNEL_OPEN",  # ['string', 'channel_type'], ['uint32', 'sender_channel'],
+#     # ['uint32', 'initial_window_size'], ['uint32', 'maximum_packet_size'],
+#     91: "SSH_MSG_CHANNEL_OPEN_CONFIRMATION",  # ['uint32', 'recipient_channel'], ['uint32', 'sender_channel'],
+#     # ['uint32', 'initial_window_size'], ['uint32', 'maximum_packet_size']
+#     92: "SSH_MSG_CHANNEL_OPEN_FAILURE",  # ['uint32', 'recipient_channel'], ['uint32', 'reason_code'],
+#     # ['string', 'reason'], ['string', 'language_tag']
+#     93: "SSH_MSG_CHANNEL_WINDOW_ADJUST",  # ['uint32', 'recipient_channel'], ['uint32', 'additional_bytes']
+#     94: "SSH_MSG_CHANNEL_DATA",  # ['uint32', 'recipient_channel'], ['string', 'data']
+#     95: "SSH_MSG_CHANNEL_EXTENDED_DATA",  # ['uint32', 'recipient_channel'],
+#     # ['uint32', 'data_type_code'], ['string', 'data']
+#     96: "SSH_MSG_CHANNEL_EOF",  # ['uint32', 'recipient_channel']
+#     97: "SSH_MSG_CHANNEL_CLOSE",  # ['uint32', 'recipient_channel']
+#     98: "SSH_MSG_CHANNEL_REQUEST",  # ['uint32', 'recipient_channel'], ['string', 'request_type'],
+#     # ['boolean', 'want_reply']
+#     99: "SSH_MSG_CHANNEL_SUCCESS",
+#     100: "SSH_MSG_CHANNEL_FAILURE",
+# }
+
 
 class SSH(base_protocol.BaseProtocol):
-    packetLayout = {
-        1: "SSH_MSG_DISCONNECT",  # ['uint32', 'reason_code'], ['string', 'reason'], ['string', 'language_tag']
-        2: "SSH_MSG_IGNORE",  # ['string', 'data']
-        3: "SSH_MSG_UNIMPLEMENTED",  # ['uint32', 'seq_no']
-        4: "SSH_MSG_DEBUG",  # ['boolean', 'always_display']
-        5: "SSH_MSG_SERVICE_REQUEST",  # ['string', 'service_name']
-        6: "SSH_MSG_SERVICE_ACCEPT",  # ['string', 'service_name']
-        20: "SSH_MSG_KEXINIT",  # ['string', 'service_name']
-        21: "SSH_MSG_NEWKEYS",
-        50: "SSH_MSG_USERAUTH_REQUEST",  # ['string', 'username'], ['string', 'service_name'], ['string', 'method_name']
-        51: "SSH_MSG_USERAUTH_FAILURE",  # ['name-list', 'authentications'], ['boolean', 'partial_success']
-        52: "SSH_MSG_USERAUTH_SUCCESS",  #
-        53: "SSH_MSG_USERAUTH_BANNER",  # ['string', 'message'], ['string', 'language_tag']
-        60: "SSH_MSG_USERAUTH_INFO_REQUEST",  # ['string', 'name'], ['string', 'instruction'],
-        # ['string', 'language_tag'], ['uint32', 'num-prompts'],
-        # ['string', 'prompt[x]'], ['boolean', 'echo[x]']
-        61: "SSH_MSG_USERAUTH_INFO_RESPONSE",  # ['uint32', 'num-responses'], ['string', 'response[x]']
-        80: "SSH_MSG_GLOBAL_REQUEST",  # ['string', 'request_name'], ['boolean', 'want_reply']  #tcpip-forward
-        81: "SSH_MSG_REQUEST_SUCCESS",
-        82: "SSH_MSG_REQUEST_FAILURE",
-        90: "SSH_MSG_CHANNEL_OPEN",  # ['string', 'channel_type'], ['uint32', 'sender_channel'],
-        # ['uint32', 'initial_window_size'], ['uint32', 'maximum_packet_size'],
-        91: "SSH_MSG_CHANNEL_OPEN_CONFIRMATION",  # ['uint32', 'recipient_channel'], ['uint32', 'sender_channel'],
-        # ['uint32', 'initial_window_size'], ['uint32', 'maximum_packet_size']
-        92: "SSH_MSG_CHANNEL_OPEN_FAILURE",  # ['uint32', 'recipient_channel'], ['uint32', 'reason_code'],
-        # ['string', 'reason'], ['string', 'language_tag']
-        93: "SSH_MSG_CHANNEL_WINDOW_ADJUST",  # ['uint32', 'recipient_channel'], ['uint32', 'additional_bytes']
-        94: "SSH_MSG_CHANNEL_DATA",  # ['uint32', 'recipient_channel'], ['string', 'data']
-        95: "SSH_MSG_CHANNEL_EXTENDED_DATA",  # ['uint32', 'recipient_channel'],
-        # ['uint32', 'data_type_code'], ['string', 'data']
-        96: "SSH_MSG_CHANNEL_EOF",  # ['uint32', 'recipient_channel']
-        97: "SSH_MSG_CHANNEL_CLOSE",  # ['uint32', 'recipient_channel']
-        98: "SSH_MSG_CHANNEL_REQUEST",  # ['uint32', 'recipient_channel'], ['string', 'request_type'],
-        # ['boolean', 'want_reply']
-        99: "SSH_MSG_CHANNEL_SUCCESS",
-        100: "SSH_MSG_CHANNEL_FAILURE",
-    }
-
     def __init__(self, server):
         super().__init__()
 
-        self.channels = []
-        self.username = ""
-        self.password = ""
-        self.auth_type = ""
+        self.channels: list[dict[str, Any]] = []
+        self.username: bytes = b""
+        self.password: bytes = b""
+        self.auth_type: bytes = b""
+        self.service: bytes = b""
 
-        self.sendOn = False
+        self.sendOn: bool = False
         self.expect_password = 0
         self.server = server
-        self.channels = []
         self.client = None
+        self.log_raw = CowrieConfig.getboolean("proxy", "log_raw", fallback=False)
 
     def set_client(self, client):
         self.client = client
 
-    def parse_packet(self, parent, message_num, payload):
+    def parse_num_packet(self, parent: str, message_num: int, payload: bytes) -> None:
         self.data = payload
         self.packetSize = len(payload)
         self.sendOn = True
-
-        if message_num in self.packetLayout:
-            packet = self.packetLayout[message_num]
-        else:
-            packet = f"UNKNOWN_{message_num}"
 
         if parent == "[SERVER]":
             direction = "PROXY -> BACKEND"
         else:
             direction = "BACKEND -> PROXY"
 
-        # log raw packets if user sets so
-        if CowrieConfig.getboolean("proxy", "log_raw", fallback=False):
+        if self.log_raw:
             log.msg(
                 eventid="cowrie.proxy.ssh",
                 format="%(direction)s - %(packet)s - %(payload)s",
                 direction=direction,
-                packet=packet.ljust(37),
+                packet=PACKETLAYOUT[message_num].ljust(37),
                 payload=repr(payload),
                 protocol="ssh",
             )
 
-        if packet == "SSH_MSG_SERVICE_REQUEST":
+        if message_num == transport.MSG_SERVICE_REQUEST:
             service = self.extract_string()
             if service == b"ssh-userauth":
                 self.sendOn = False
 
+        elif message_num == userauth.MSG_USERAUTH_BANNER:
+            self.sendOn = False
+
+        elif message_num == transport.MSG_EXT_INFO:
+            extensioncount: int = self.extract_int(4)
+            for _ in range(extensioncount):
+                log.msg(
+                    f"SSH_MSG_EXT_INFO: {self.extract_string()!r}={self.extract_string()!r}"
+                )
+            self.sendOn = False
+
         # - UserAuth
-        if packet == "SSH_MSG_USERAUTH_REQUEST":
+        elif message_num == userauth.MSG_USERAUTH_REQUEST:
             self.sendOn = False
             self.username = self.extract_string()
             self.extract_string()  # service
@@ -144,18 +158,19 @@ class SSH(base_protocol.BaseProtocol):
                 self.sendOn = False
                 self.server.sendPacket(51, string_to_hex("password") + chr(0).encode())
 
-        elif packet == "SSH_MSG_USERAUTH_FAILURE":
+        elif message_num == userauth.MSG_USERAUTH_FAILURE:
             self.sendOn = False
             auth_list = self.extract_string()
 
             if b"publickey" in auth_list:
                 log.msg("[SSH] Detected Public Key Auth - Disabling!")
                 payload = string_to_hex("password") + chr(0).encode()
+                # self.server.sendPacket(51, payload)
 
-        elif packet == "SSH_MSG_USERAUTH_SUCCESS":
+        elif message_num == userauth.MSG_USERAUTH_SUCCESS:
             self.sendOn = False
 
-        elif packet == "SSH_MSG_USERAUTH_INFO_REQUEST":
+        elif message_num == userauth.MSG_USERAUTH_INFO_REQUEST:
             self.sendOn = False
             self.auth_type = b"keyboard-interactive"
             self.extract_string()
@@ -166,10 +181,10 @@ class SSH(base_protocol.BaseProtocol):
                 request = self.extract_string()
                 self.extract_bool()
 
-                if "password" in request.lower():
+                if b"password" in request.lower():
                     self.expect_password = i
 
-        elif packet == "SSH_MSG_USERAUTH_INFO_RESPONSE":
+        elif message_num == userauth.MSG_USERAUTH_INFO_RESPONSE:
             self.sendOn = False
             num_responses = self.extract_int(4)
             for i in range(0, num_responses):
@@ -179,11 +194,11 @@ class SSH(base_protocol.BaseProtocol):
 
         # - End UserAuth
         # - Channels
-        elif packet == "SSH_MSG_CHANNEL_OPEN":
+        elif message_num == connection.MSG_CHANNEL_OPEN:
             channel_type = self.extract_string()
             channel_id = self.extract_int(4)
 
-            log.msg(f"got channel {channel_type} request")
+            log.msg(f"got channel {channel_type!r} request")
 
             if channel_type == b"session":
                 # if using an interactive session reset frontend timeout
@@ -251,9 +266,9 @@ class SSH(base_protocol.BaseProtocol):
             else:
                 # UNKNOWN CHANNEL TYPE
                 if channel_type not in [b"exit-status"]:
-                    log.msg(f"[SSH Unknown Channel Type Detected - {channel_type}")
+                    log.msg(f"[SSH Unknown Channel Type Detected - {channel_type!r}")
 
-        elif packet == "SSH_MSG_CHANNEL_OPEN_CONFIRMATION":
+        elif message_num == connection.MSG_CHANNEL_OPEN_CONFIRMATION:
             channel = self.get_channel(self.extract_int(4), parent)
             # SENDER
             sender_id = self.extract_int(4)
@@ -264,12 +279,12 @@ class SSH(base_protocol.BaseProtocol):
                 channel["clientID"] = sender_id
                 # CHANNEL OPENED
 
-        elif packet == "SSH_MSG_CHANNEL_OPEN_FAILURE":
+        elif message_num == connection.MSG_CHANNEL_OPEN_FAILURE:
             channel = self.get_channel(self.extract_int(4), parent)
             self.channels.remove(channel)
             # CHANNEL FAILED TO OPEN
 
-        elif packet == "SSH_MSG_CHANNEL_REQUEST":
+        elif message_num == connection.MSG_CHANNEL_REQUEST:
             channel = self.get_channel(self.extract_int(4), parent)
             channel_type = self.extract_string()
             the_uuid = uuid.uuid4().hex
@@ -279,6 +294,7 @@ class SSH(base_protocol.BaseProtocol):
                 channel["session"] = term.Term(
                     the_uuid, channel["name"], self, channel["clientID"]
                 )
+                log.msg(f"MSG_CHANNEL_REQUEST: {channel_type!r}")
 
             elif channel_type == b"exec":
                 channel["name"] = "[EXEC" + str(channel["serverID"]) + "]"
@@ -287,10 +303,12 @@ class SSH(base_protocol.BaseProtocol):
                 channel["session"] = exec_term.ExecTerm(
                     the_uuid, channel["name"], self, channel["serverID"], command
                 )
+                log.msg(f"MSG_CHANNEL_REQUEST: {channel_type!r}: {command!r}")
 
             elif channel_type == b"subsystem":
                 self.extract_bool()
                 subsystem = self.extract_string()
+                log.msg(f"MSG_CHANNEL_REQUEST: {channel_type!r}: {subsystem!r}")
 
                 if subsystem == b"sftp":
                     if CowrieConfig.getboolean("ssh", "sftp_enabled"):
@@ -303,14 +321,20 @@ class SSH(base_protocol.BaseProtocol):
                         self.send_back(parent, 100, int_to_hex(channel["serverID"]))
                 else:
                     # UNKNOWN SUBSYSTEM
+                    log.msg(f"MSG_CHANNEL_REQUEST: {channel_type!r}: {subsystem!r}")
                     log.msg(
                         "[SSH] Unknown Subsystem Type Detected - " + subsystem.decode()
                     )
+            elif channel_type == b"env":
+                _ = self.extract_bool()
+                var = self.extract_string()
+                value = self.extract_string()
+                log.msg(f"MSG_CHANNEL_REQUEST: env: {var.decode()}={value.decode()}")
+
             else:
                 # UNKNOWN CHANNEL REQUEST TYPE
                 if channel_type not in [
                     b"window-change",
-                    b"env",
                     b"pty-req",
                     b"exit-status",
                     b"exit-signal",
@@ -319,10 +343,10 @@ class SSH(base_protocol.BaseProtocol):
                         f"[SSH] Unknown Channel Request Type Detected - {channel_type.decode()}"
                     )
 
-        elif packet == "SSH_MSG_CHANNEL_FAILURE":
+        elif message_num == connection.MSG_CHANNEL_FAILURE:
             pass
 
-        elif packet == "SSH_MSG_CHANNEL_CLOSE":
+        elif message_num == connection.MSG_CHANNEL_CLOSE:
             channel = self.get_channel(self.extract_int(4), parent)
             # Is this needed?!
             channel[parent] = True
@@ -336,22 +360,25 @@ class SSH(base_protocol.BaseProtocol):
                 self.channels.remove(channel)
         # - END Channels
         # - ChannelData
-        elif packet == "SSH_MSG_CHANNEL_DATA":
+        elif message_num == connection.MSG_CHANNEL_DATA:
             channel = self.get_channel(self.extract_int(4), parent)
             channel["session"].parse_packet(parent, self.extract_string())
 
-        elif packet == "SSH_MSG_CHANNEL_EXTENDED_DATA":
+        elif message_num == connection.MSG_CHANNEL_EXTENDED_DATA:
             channel = self.get_channel(self.extract_int(4), parent)
             self.extract_int(4)
             channel["session"].parse_packet(parent, self.extract_string())
         # - END ChannelData
 
-        elif packet == "SSH_MSG_GLOBAL_REQUEST":
+        elif message_num == connection.MSG_GLOBAL_REQUEST:
             channel_type = self.extract_string()
             if channel_type == b"tcpip-forward":
-                if not CowrieConfig.getboolean(["ssh", "forwarding"]):
+                if not CowrieConfig.getboolean("ssh", "forwarding"):
                     self.sendOn = False
-                    self.send_back(parent, 82, "")
+                    self.send_back(parent, 82, b"")
+
+        else:
+            log.msg(f"Unhandled SSH packet: {message_num}")
 
         if self.sendOn:
             if parent == "[SERVER]":
@@ -359,8 +386,7 @@ class SSH(base_protocol.BaseProtocol):
             else:
                 self.server.sendPacket(message_num, payload)
 
-    def send_back(self, parent, message_num, payload):
-        packet = self.packetLayout[message_num]
+    def send_back(self, parent: str, message_num: int, payload: bytes) -> None:
 
         if parent == "[SERVER]":
             direction = "PROXY -> FRONTEND"
@@ -371,7 +397,7 @@ class SSH(base_protocol.BaseProtocol):
                 eventid="cowrie.proxy.ssh",
                 format="%(direction)s - %(packet)s - %(payload)s",
                 direction=direction,
-                packet=packet.ljust(37),
+                packet=PACKETLAYOUT[message_num].ljust(37),
                 payload=repr(payload),
                 protocol="ssh",
             )
@@ -391,7 +417,7 @@ class SSH(base_protocol.BaseProtocol):
                 {"clientID": channel_id, "type": channel_type, "session": session}
             )
 
-    def get_channel(self, channel_num, parent):
+    def get_channel(self, channel_num: int, parent: str) -> dict[str, Any]:
         the_channel = None
         for channel in self.channels:
             if parent == "[CLIENT]":
@@ -402,4 +428,7 @@ class SSH(base_protocol.BaseProtocol):
             if channel[search] == channel_num:
                 the_channel = channel
                 break
-        return the_channel
+        if the_channel is None:
+            raise KeyError
+        else:
+            return the_channel

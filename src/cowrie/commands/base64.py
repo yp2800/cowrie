@@ -1,3 +1,4 @@
+from __future__ import annotations
 import base64
 import getopt
 import sys
@@ -9,15 +10,15 @@ from cowrie.shell.command import HoneyPotCommand
 commands = {}
 
 
-class command_base64(HoneyPotCommand):
+class Command_base64(HoneyPotCommand):
     """
     author: Ivan Korolev (@fe7ch)
     """
 
-    mode: str = "e"
+    mode: str
     ignore: bool
 
-    def start(self):
+    def start(self) -> None:
         self.mode = "e"
         self.ignore = False
 
@@ -84,15 +85,17 @@ Written by Simon Josefsson.
             elif opt[0] == "-w" or opt[0] == "wrap":
                 pass
 
-        if self.input_data:
-            self.dojob(self.input_data)
+        if len(args) == 0:
+            if self.input_data:
+                self.dojob(self.input_data)
+            else:
+                return
         else:
             if len(args) > 1:
                 self.errorWrite(
-                    """base64: extra operand '%s'
+                    f"""base64: extra operand '{args[0]}'
 Try 'base64 --help' for more information.
 """
-                    % args[0]
                 )
                 self.exit()
                 return
@@ -102,10 +105,8 @@ Try 'base64 --help' for more information.
                 try:
                     self.dojob(self.fs.file_contents(pname))
                 except Exception as e:
-                    print(str(e))
-                    self.errorWrite(
-                        "base64: {}: No such file or directory\n".format(args[0])
-                    )
+                    log.err(str(e))
+                    self.errorWrite(f"base64: {args[0]}: No such file or directory\n")
             else:
                 self.errorWrite("base64: read error: Is a directory\n")
 
@@ -131,7 +132,7 @@ Try 'base64 --help' for more information.
             except Exception:
                 self.errorWrite("base64: invalid input\n")
 
-    def lineReceived(self, line):
+    def lineReceived(self, line: str) -> None:
         log.msg(
             eventid="cowrie.session.input",
             realm="base64",
@@ -139,11 +140,11 @@ Try 'base64 --help' for more information.
             format="INPUT (%(realm)s): %(input)s",
         )
 
-        self.dojob(line)
+        self.dojob(line.encode("ascii"))
 
-    def handle_CTRL_D(self):
+    def handle_CTRL_D(self) -> None:
         self.exit()
 
 
-commands["/usr/bin/base64"] = command_base64
-commands["base64"] = command_base64
+commands["/usr/bin/base64"] = Command_base64
+commands["base64"] = Command_base64

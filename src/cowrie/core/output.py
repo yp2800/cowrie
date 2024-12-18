@@ -26,13 +26,15 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
+from __future__ import annotations
 
 import abc
 import re
 import socket
 import time
 from os import environ
-from typing import Dict, Pattern, Union
+from typing import Any
+from re import Pattern
 
 from twisted.internet import reactor
 from twisted.logger import formatTime
@@ -57,25 +59,31 @@ from cowrie.core.config import CowrieConfig
 #  cowrie.session.file_download
 #  cowrie.session.file_upload
 
-"""
-The time is available in two formats in each event, as key 'time'
-in epoch format and in key 'timestamp' as a ISO compliant string
-in UTC.
-"""
+
+# The time is available in two formats in each event, as key 'time'
+# in epoch format and in key 'timestamp' as a ISO compliant string
+# in UTC.
 
 
-def convert(input: Union[str, list, dict, bytes]) -> Union[str, list, dict]:
+def convert(data):
     """
     This converts a nested dictionary with bytes in it to string
     """
-    if isinstance(input, dict):
-        return {convert(key): convert(value) for key, value in list(input.items())}
-    elif isinstance(input, list):
-        return [convert(element) for element in input]
-    elif isinstance(input, bytes):
-        return input.decode("utf-8")
-    else:
-        return input
+    if isinstance(data, str):
+        return data
+    if isinstance(data, dict):
+        return {convert(key): convert(value) for key, value in list(data.items())}
+    if isinstance(data, dict):
+        return {convert(key): convert(value) for key, value in list(data.items())}
+    if isinstance(data, list):
+        return [convert(element) for element in data]
+    if isinstance(data, bytes):
+        try:
+            string = data.decode("utf-8")
+        except UnicodeDecodeError:
+            string = repr(data)
+        return string
+    return data
 
 
 class Output(metaclass=abc.ABCMeta):
@@ -86,12 +94,12 @@ class Output(metaclass=abc.ABCMeta):
     """
 
     def __init__(self) -> None:
-        self.sessions: Dict[str, str] = {}
-        self.ips: Dict[str, str] = {}
+        self.sessions: dict[str, str] = {}
+        self.ips: dict[str, str] = {}
 
         # Need these for each individual transport, or else the session numbers overlap
-        self.sshRegex: Pattern = re.compile(".*SSHTransport,([0-9]+),[0-9a-f:.]+$")
-        self.telnetRegex: Pattern = re.compile(
+        self.sshRegex: Pattern[str] = re.compile(".*SSHTransport,([0-9]+),[0-9a-f:.]+$")
+        self.telnetRegex: Pattern[str] = re.compile(
             ".*TelnetTransport,([0-9]+),[0-9a-f:.]+$"
         )
         self.sensor: str = CowrieConfig.get(
@@ -134,7 +142,7 @@ class Output(metaclass=abc.ABCMeta):
         pass
 
     @abc.abstractmethod
-    def write(self, event: dict) -> None:
+    def write(self, event: dict[str, Any]) -> None:
         """
         Handle a general event within the output plugin
         """
@@ -150,7 +158,6 @@ class Output(metaclass=abc.ABCMeta):
         - 'message' or 'format'
         """
         sessionno: str
-        ev: dict
 
         # Ignore stdout and stderr in output plugins
         if "printed" in event:
@@ -172,7 +179,7 @@ class Output(metaclass=abc.ABCMeta):
         if "message" not in event and "format" not in event:
             return
 
-        ev: Dict[str, any] = event  # type: ignore
+        ev: dict[str, any] = convert(event)  # type: ignore
         ev["sensor"] = self.sensor
 
         if "isError" in ev:
@@ -185,7 +192,7 @@ class Output(metaclass=abc.ABCMeta):
 
         if "format" in ev and ("message" not in ev or ev["message"] == ()):
             try:
-                ev["message"] = ev["format"] % ev
+                ev["message"] = ev["format"] % ev  # type: ignore
                 del ev["format"]
             except Exception:
                 pass
@@ -210,13 +217,16 @@ class Output(metaclass=abc.ABCMeta):
             sessionno = "0"
             telnetmatch = self.telnetRegex.match(ev["system"])
             if telnetmatch:
-                sessionno = "T{}".format(telnetmatch.groups()[0])
+                sessionno = f"T{telnetmatch.groups()[0]}"
             else:
                 sshmatch = self.sshRegex.match(ev["system"])
                 if sshmatch:
-                    sessionno = "S{}".format(sshmatch.groups()[0])
+                    sessionno = f"S{sshmatch.groups()[0]}"
             if sessionno == "0":
                 return
+        else:
+            print(f"Can't determine sessionno: {ev!r}")  # noqa: T201
+            return
 
         if sessionno in self.ips:
             ev["src_ip"] = self.ips[sessionno]

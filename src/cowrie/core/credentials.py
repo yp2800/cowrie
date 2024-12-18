@@ -26,17 +26,23 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
+from __future__ import annotations
 
-from twisted.cred.credentials import ICredentials, IUsernamePassword
 
 from zope.interface import implementer
+
+from twisted.cred.credentials import ICredentials, IUsernamePassword
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 
 class IUsername(ICredentials):
     """
     Encapsulate username only
 
-    @type username: C{str}
+    @type username: C{bytes}
     @ivar username: The username associated with these credentials.
     """
 
@@ -45,10 +51,10 @@ class IUsernamePasswordIP(IUsernamePassword):
     """
     I encapsulate a username, a plaintext password and a source IP
 
-    @type username: C{str}
+    @type username: C{bytes}
     @ivar username: The username associated with these credentials.
 
-    @type password: C{str}
+    @type password: C{bytes}
     @ivar password: The password associated with these credentials.
 
     @type ip: C{str}
@@ -68,16 +74,16 @@ class PluggableAuthenticationModulesIP:
     Twisted removed IPAM in 15, adding in Cowrie now
     """
 
-    def __init__(self, username: str, pamConversion: bool, ip: str) -> None:
-        self.username: str = username
-        self.pamConversion: bool = pamConversion
+    def __init__(self, username: bytes, pamConversion: Callable, ip: str) -> None:
+        self.username: bytes = username
+        self.pamConversion: Callable = pamConversion
         self.ip: str = ip
 
 
 @implementer(IUsername)
 class Username:
-    def __init__(self, username: str):
-        self.username: str = username
+    def __init__(self, username: bytes):
+        self.username: bytes = username
 
 
 @implementer(IUsernamePasswordIP)
@@ -86,10 +92,10 @@ class UsernamePasswordIP:
     This credential interface also provides an IP address
     """
 
-    def __init__(self, username: str, password: str, ip: str) -> None:
-        self.username: str = username
-        self.password: str = password
+    def __init__(self, username: bytes, password: bytes, ip: str) -> None:
+        self.username: bytes = username
+        self.password: bytes = password
         self.ip: str = ip
 
-    def checkPassword(self, password: str) -> bool:
+    def checkPassword(self, password: bytes) -> bool:
         return self.password == password

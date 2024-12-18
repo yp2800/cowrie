@@ -1,13 +1,14 @@
 # Copyright (c) 2019 Guilherme Borges <guilhermerosasborges@gmail.com>
 # All rights reserved.
 
+from __future__ import annotations
+
 from twisted.conch.telnet import TelnetTransport
 from twisted.internet import protocol
 from twisted.protocols.policies import TimeoutMixin
 from twisted.python import log
 
 
-# object is added for Python 2.7 compatibility (#1198) - as is super with args
 class BackendTelnetTransport(TelnetTransport, TimeoutMixin):
     def __init__(self):
         # self.delayedPacketsToFrontend = []

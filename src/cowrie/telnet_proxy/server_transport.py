@@ -5,6 +5,7 @@ Telnet Transport and Authentication for the Honeypot
 @author: Olivier Bilodeau <obilodeau@gosecure.ca>
 """
 
+from __future__ import annotations
 
 import time
 import uuid
@@ -21,7 +22,7 @@ from cowrie.telnet_proxy.handler import TelnetHandler
 
 
 # object is added for Python 2.7 compatibility (#1198) - as is super with args
-class FrontendTelnetTransport(TelnetTransport, TimeoutMixin):
+class FrontendTelnetTransport(TimeoutMixin, TelnetTransport):
     def __init__(self):
         super().__init__()
 
@@ -64,7 +65,7 @@ class FrontendTelnetTransport(TelnetTransport, TimeoutMixin):
             dst_ip=self.transport.getHost().host,
             dst_port=self.transport.getHost().port,
             session=self.transportId,
-            sessionno="T{}".format(str(sessionno)),
+            sessionno=f"T{sessionno!s}",
             protocol="telnet",
         )
 
@@ -135,7 +136,7 @@ class FrontendTelnetTransport(TelnetTransport, TimeoutMixin):
         d.addCallback(self.backend_connection_success)
         d.addErrback(self.backend_connection_error)
 
-    def dataReceived(self, data):
+    def dataReceived(self, data: bytes) -> None:
         self.telnetHandler.addPacket("frontend", data)
 
     def write(self, data):

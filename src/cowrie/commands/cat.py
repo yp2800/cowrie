@@ -5,6 +5,7 @@
 cat command
 
 """
+from __future__ import annotations
 
 
 import getopt
@@ -17,7 +18,7 @@ from cowrie.shell.fs import FileNotFound
 commands = {}
 
 
-class command_cat(HoneyPotCommand):
+class Command_cat(HoneyPotCommand):
     """
     cat command
     """
@@ -25,7 +26,7 @@ class command_cat(HoneyPotCommand):
     number = False
     linenumber = 1
 
-    def start(self):
+    def start(self) -> None:
         try:
             optlist, args = getopt.gnu_getopt(
                 self.args, "AbeEnstTuv", ["help", "number", "version"]
@@ -37,7 +38,7 @@ class command_cat(HoneyPotCommand):
             self.exit()
             return
 
-        for o, a in optlist:
+        for o, _a in optlist:
             if o in ("--help"):
                 self.help()
                 self.exit()
@@ -59,10 +60,7 @@ class command_cat(HoneyPotCommand):
 
                 try:
                     contents = self.fs.file_contents(pname)
-                    if contents:
-                        self.output(contents)
-                    else:
-                        raise FileNotFound
+                    self.output(contents)
                 except FileNotFound:
                     self.errorWrite(f"cat: {arg}: No such file or directory\n")
             self.exit()
@@ -70,21 +68,14 @@ class command_cat(HoneyPotCommand):
             self.output(self.input_data)
             self.exit()
 
-    def output(self, input):
+    def output(self, inb: bytes | None) -> None:
         """
         This is the cat output, with optional line numbering
         """
-        if input is None:
+        if inb is None:
             return
 
-        if isinstance(input, str):
-            input = input.encode("utf8")
-        elif isinstance(input, bytes):
-            pass
-        else:
-            log.msg("unusual cat input {}".format(repr(input)))
-
-        lines = input.split(b"\n")
+        lines = inb.split(b"\n")
         if lines[-1] == b"":
             lines.pop()
         for line in lines:
@@ -93,7 +84,7 @@ class command_cat(HoneyPotCommand):
                 self.linenumber = self.linenumber + 1
             self.writeBytes(line + b"\n")
 
-    def lineReceived(self, line):
+    def lineReceived(self, line: str) -> None:
         """
         This function logs standard input from the user send to cat
         """
@@ -104,15 +95,15 @@ class command_cat(HoneyPotCommand):
             format="INPUT (%(realm)s): %(input)s",
         )
 
-        self.output(line)
+        self.output(line.encode("utf-8"))
 
-    def handle_CTRL_D(self):
+    def handle_CTRL_D(self) -> None:
         """
         ctrl-d is end-of-file, time to terminate
         """
         self.exit()
 
-    def help(self):
+    def help(self) -> None:
         self.write(
             """Usage: cat [OPTION]... [FILE]...
 Concatenate FILE(s) to standard output.
@@ -143,5 +134,5 @@ or available locally via: info '(coreutils) cat invocation'
         )
 
 
-commands["/bin/cat"] = command_cat
-commands["cat"] = command_cat
+commands["/bin/cat"] = Command_cat
+commands["cat"] = Command_cat

@@ -1,5 +1,6 @@
 # Copyright (c) 2013 Bas Stottelaar <basstottelaar [AT] gmail [DOT] com>
 
+from __future__ import annotations
 
 import getopt
 import os
@@ -11,11 +12,15 @@ from twisted.internet import reactor
 
 from cowrie.core.config import CowrieConfig
 from cowrie.shell.command import HoneyPotCommand
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from twisted.internet.defer import Deferred
 
 commands = {}
 
 
-class command_gcc(HoneyPotCommand):
+class Command_gcc(HoneyPotCommand):
     # Name of program. Under OSX, you might consider i686-apple-darwin11-llvm-gcc-X.X
     APP_NAME = "gcc"
 
@@ -49,7 +54,9 @@ class command_gcc(HoneyPotCommand):
         b"\x01\x00\x00\x00"
     )
 
-    def start(self):
+    scheduled: Deferred
+
+    def call(self) -> None:
         """
         Parse as much as possible from a GCC syntax and generate the output
         that is requested. The file that is generated can be read (and will)
@@ -119,7 +126,7 @@ class command_gcc(HoneyPotCommand):
                     input_files = input_files + 1
                 else:
                     self.write(
-                        f"{command_gcc.APP_NAME}: {value}: No such file or directory\n"
+                        f"{Command_gcc.APP_NAME}: {value}: No such file or directory\n"
                     )
                     complete = False
 
@@ -128,13 +135,13 @@ class command_gcc(HoneyPotCommand):
             timeout = 0.1 + random.random()
 
             # Schedule call to make it more time consuming and real
-            self.scheduled = reactor.callLater(
-                timeout, self.generate_file(output_file if output_file else "a.out")
+            self.scheduled = reactor.callLater(  # type: ignore[attr-defined]
+                timeout, self.generate_file, (output_file if output_file else "a.out")
             )
         else:
             self.no_files()
 
-    def handle_CTRL_C(self):
+    def handle_CTRL_C(self) -> None:
         """
         Make sure the scheduled call will be canceled
         """
@@ -142,49 +149,42 @@ class command_gcc(HoneyPotCommand):
         if getattr(self, "scheduled", False):
             self.scheduled.cancel()
 
-    def no_files(self):
+    def no_files(self) -> None:
         """
-        Notify user there are no input files, and exit
+        Notify user there are no input files
         """
         self.write(
             """gcc: fatal error: no input files
 compilation terminated.\n"""
         )
-        self.exit()
 
-    def version(self, short):
+    def version(self, short: bool) -> None:
         """
-        Print long or short version, and exit
+        Print long or short version
         """
 
         # Generate version number
-        version = ".".join([str(v) for v in command_gcc.APP_VERSION[:3]])
-        version_short = ".".join([str(v) for v in command_gcc.APP_VERSION[:2]])
+        version = ".".join([str(v) for v in Command_gcc.APP_VERSION[:3]])
+        version_short = ".".join([str(v) for v in Command_gcc.APP_VERSION[:2]])
 
         if short:
-            data = (
-                """%s (Debian %s-8) %s
+            data = f"""{Command_gcc.APP_NAME} (Debian {version}-8) {version}
 Copyright (C) 2010 Free Software Foundation, Inc.
 This is free software; see the source for copying conditions.  There is NO
-warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.""",
-                (command_gcc.APP_NAME, version, version),
-            )
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE."""
         else:
-            data = """Using built-in specs.
+            data = f"""Using built-in specs.
 COLLECT_GCC=gcc
 COLLECT_LTO_WRAPPER=/usr/lib/gcc/x86_64-linux-gnu/4.7/lto-wrapper
 Target: x86_64-linux-gnu
-Configured with: ../src/configure -v --with-pkgversion=\'Debian {}-5\' --with-bugurl=file:///usr/share/doc/gcc-{}/README.Bugs --enable-languages=c,c++,fortran,objc,obj-c++ --prefix=/usr --program-suffix=-{} --enable-shared --enable-multiarch --enable-linker-build-id --with-system-zlib --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --with-gxx-include-dir=/usr/include/c++/{} --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-objc-gc --with-arch-32=i586 --with-tune=generic --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu
+Configured with: ../src/configure -v --with-pkgversion=\'Debian {version}-5\' --with-bugurl=file:///usr/share/doc/gcc-{version_short}/README.Bugs --enable-languages=c,c++,fortran,objc,obj-c++ --prefix=/usr --program-suffix=-{version_short} --enable-shared --enable-multiarch --enable-linker-build-id --with-system-zlib --libexecdir=/usr/lib --without-included-gettext --enable-threads=posix --with-gxx-include-dir=/usr/include/c++/{version_short} --libdir=/usr/lib --enable-nls --enable-clocale=gnu --enable-libstdcxx-debug --enable-objc-gc --with-arch-32=i586 --with-tune=generic --enable-checking=release --build=x86_64-linux-gnu --host=x86_64-linux-gnu --target=x86_64-linux-gnu
 Thread model: posix
-gcc version {} (Debian {}-5)""".format(
-                version, version_short, version_short, version_short, version, version
-            )
+gcc version {version} (Debian {version}-5)"""
 
         # Write
         self.write(f"{data}\n")
-        self.exit()
 
-    def generate_file(self, outfile):
+    def generate_file(self, outfile: str) -> None:
         data = b""
         # TODO: make sure it is written to temp file, not downloads
         tmp_fname = "{}_{}_{}_{}".format(
@@ -194,16 +194,16 @@ gcc version {} (Debian {}-5)""".format(
             re.sub("[^A-Za-z0-9]", "_", outfile),
         )
         safeoutfile = os.path.join(
-            CowrieConfig.get("honeypot", "download_path"), tmp_fname
+            CowrieConfig.get("honeypot", "download_path", fallback="."), tmp_fname
         )
 
         # Data contains random garbage from an actual file, so when
         # catting the file, you'll see some 'real' compiled data
-        for i in range(random.randint(3, 15)):
+        for _i in range(random.randint(3, 15)):
             if random.randint(1, 3) == 1:
-                data = data + command_gcc.RANDOM_DATA[::-1]
+                data = data + Command_gcc.RANDOM_DATA[::-1]
             else:
-                data = data + command_gcc.RANDOM_DATA
+                data = data + Command_gcc.RANDOM_DATA
 
         # Write random data
         with open(safeoutfile, "wb") as f:
@@ -213,29 +213,26 @@ gcc version {} (Debian {}-5)""".format(
         outfile = self.fs.resolve_path(outfile, self.protocol.cwd)
 
         # Create file for the protocol
-        self.fs.mkfile(outfile, 0, 0, len(data), 33188)
+        self.fs.mkfile(
+            outfile, self.protocol.user.uid, self.protocol.user.gid, len(data), 33188
+        )
         self.fs.update_realfile(self.fs.getfile(outfile), safeoutfile)
-        self.fs.chown(outfile, self.protocol.user.uid, self.protocol.user.gid)
 
         # Segfault command
         class segfault_command(HoneyPotCommand):
-            def call(self):
+            def call(self) -> None:
                 self.write("Segmentation fault\n")
 
         # Trick the 'new compiled file' as an segfault
         self.protocol.commands[outfile] = segfault_command
 
-        # Done
-        self.exit()
-
-    def arg_missing(self, arg):
+    def arg_missing(self, arg: str) -> None:
         """
         Print missing argument message, and exit
         """
-        self.write(f"{command_gcc.APP_NAME}: argument to '{arg}' is missing\n")
-        self.exit()
+        self.write(f"{Command_gcc.APP_NAME}: argument to '{arg}' is missing\n")
 
-    def help(self):
+    def help(self) -> None:
         """
         Print help info, and exit
         """
@@ -303,11 +300,10 @@ For bug reporting instructions, please see:
 <file:///usr/share/doc/gcc-4.7/README.Bugs>.
 """
         )
-        self.exit()
 
 
-commands["/usr/bin/gcc"] = command_gcc
-commands["gcc"] = command_gcc
+commands["/usr/bin/gcc"] = Command_gcc
+commands["gcc"] = Command_gcc
 commands[
-    "/usr/bin/gcc-%s" % (".".join([str(v) for v in command_gcc.APP_VERSION[:2]]))
-] = command_gcc
+    "/usr/bin/gcc-{}".format(".".join([str(v) for v in Command_gcc.APP_VERSION[:2]]))
+] = Command_gcc

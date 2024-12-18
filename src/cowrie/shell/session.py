@@ -1,12 +1,13 @@
 # Copyright (c) 2009-2014 Upi Tamminen <desaster@gmail.com>
 # See the COPYRIGHT file for more information
 
+from __future__ import annotations
+
+from zope.interface import implementer
 
 from twisted.conch.interfaces import ISession
 from twisted.conch.ssh import session
 from twisted.python import log
-
-from zope.interface import implementer
 
 from cowrie.insults import insults
 from cowrie.shell import protocol
@@ -29,21 +30,22 @@ class SSHSessionForCowrieUser:
         self.gid = avatar.gid
         self.username = avatar.username
         self.environ = {
+            "HOME": self.avatar.home,
             "LOGNAME": self.username,
             "SHELL": "/bin/bash",
-            "USER": self.username,
-            "HOME": self.avatar.home,
+            "SHLVL": "1",
             "TMOUT": "1800",
             "UID": str(self.uid),
+            "USER": self.username,
         }
         if self.uid == 0:
-            self.environ[
-                "PATH"
-            ] = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            self.environ["PATH"] = (
+                "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+            )
         else:
-            self.environ[
-                "PATH"
-            ] = "/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games"
+            self.environ["PATH"] = (
+                "/usr/local/bin:/usr/bin:/bin:/usr/local/games:/usr/games"
+            )
 
         self.server.initFileSystem(self.avatar.home)
 
@@ -66,7 +68,6 @@ class SSHSessionForCowrieUser:
             format="Terminal Size: %(width)s %(height)s",
         )
         self.windowSize = windowSize
-        return None
 
     def execCommand(self, processprotocol, cmd):
         self.protocol = insults.LoggingServerProtocol(
@@ -75,7 +76,7 @@ class SSHSessionForCowrieUser:
         self.protocol.makeConnection(processprotocol)
         processprotocol.makeConnection(session.wrapProtocol(self.protocol))
 
-    def closed(self):
+    def closed(self) -> None:
         """
         this is reliably called on both logout and disconnect
         we notify the protocol here we lost the connection
@@ -84,7 +85,7 @@ class SSHSessionForCowrieUser:
             self.protocol.connectionLost("disconnected")
             self.protocol = None
 
-    def eofReceived(self):
+    def eofReceived(self) -> None:
         if self.protocol:
             self.protocol.eofReceived()
 

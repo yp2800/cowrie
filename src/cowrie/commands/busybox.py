@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from twisted.python import log
 
 from cowrie.shell.command import HoneyPotCommand
@@ -53,17 +55,17 @@ Currently defined functions:
 )
 
 
-class command_busybox(HoneyPotCommand):
+class Command_busybox(HoneyPotCommand):
     """
     Fixed by Ivan Korolev (@fe7ch)
     The command should never call self.exit(), cause it will corrupt cmdstack
     """
 
-    def help(self):
+    def help(self) -> None:
         for ln in busybox_help:
             self.errorWrite(f"{ln}\n")
 
-    def call(self):
+    def call(self) -> None:
         if len(self.args) == 0:
             self.help()
             return
@@ -96,10 +98,10 @@ class command_busybox(HoneyPotCommand):
 
             # Place this here so it doesn't write out only if last statement
             if self.input_data:
-                self.write(self.input_data)
+                self.writeBytes(self.input_data)
         else:
             self.write(f"{cmd}: applet not found\n")
 
 
-commands["/bin/busybox"] = command_busybox
-commands["busybox"] = command_busybox
+commands["/bin/busybox"] = Command_busybox
+commands["busybox"] = Command_busybox

@@ -5,11 +5,13 @@
 This module contains code to deal with Cowrie's configuration
 """
 
+from __future__ import annotations
 
 import configparser
 from os import environ
 from os.path import abspath, dirname, exists, join
-from typing import List, Union
+
+from twisted.python import log
 
 
 def to_environ_key(key: str) -> str:
@@ -34,11 +36,11 @@ class EnvironmentConfigParser(configparser.ConfigParser):
         return super().get(section, option, raw=raw, **kwargs)
 
 
-def readConfigFile(cfgfile: Union[str, List[str]]) -> configparser.ConfigParser:
+def readConfigFile(cfgfile: list[str] | str) -> configparser.ConfigParser:
     """
     Read config files and return ConfigParser object
 
-    @param cfgfile: filename or array of filenames
+    @param cfgfile: filename or list of filenames
     @return: ConfigParser object
     """
     parser = EnvironmentConfigParser(interpolation=configparser.ExtendedInterpolation())
@@ -46,8 +48,10 @@ def readConfigFile(cfgfile: Union[str, List[str]]) -> configparser.ConfigParser:
     return parser
 
 
-def get_config_path() -> List[str]:
-    """Get absolute path to the config file"""
+def get_config_path() -> list[str]:
+    """
+    Get absolute path to the config file
+    """
     current_path = abspath(dirname(__file__))
     root = "/".join(current_path.split("/")[:-3])
 
@@ -60,9 +64,10 @@ def get_config_path() -> List[str]:
     found_confs = [path for path in config_files if exists(path)]
 
     if found_confs:
+        log.msg(f"Reading configuration from {found_confs!r}")
         return found_confs
 
-    print("Config file not found")
+    log.msg("Config file not found")
     return []
 
 

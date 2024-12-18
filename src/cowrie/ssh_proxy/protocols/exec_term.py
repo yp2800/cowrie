@@ -26,6 +26,8 @@
 # OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
 # SUCH DAMAGE.
 
+from __future__ import annotations
+
 import os
 import time
 
@@ -40,21 +42,24 @@ class ExecTerm(base_protocol.BaseProtocol):
     def __init__(self, uuid, channelName, ssh, channelId, command):
         super().__init__(uuid, channelName, ssh)
 
-        log.msg(
-            eventid="cowrie.command.input",
-            input=command.decode("ascii"),
-            format="CMD: %(input)s",
-        )
+        try:
+            log.msg(
+                eventid="cowrie.command.input",
+                input=command.decode("utf8"),
+                format="CMD: %(input)s",
+            )
+        except UnicodeDecodeError:
+            log.err(f"Unusual execcmd: {command!r}")
 
         self.transportId = ssh.server.transportId
         self.channelId = channelId
 
-        self.startTime = time.time()
-        self.ttylogPath = CowrieConfig.get("honeypot", "ttylog_path")
-        self.ttylogEnabled = CowrieConfig.getboolean(
+        self.startTime: float = time.time()
+        self.ttylogPath: str = CowrieConfig.get("honeypot", "ttylog_path")
+        self.ttylogEnabled: bool = CowrieConfig.getboolean(
             "honeypot", "ttylog", fallback=True
         )
-        self.ttylogSize = 0
+        self.ttylogSize: int = 0
 
         if self.ttylogEnabled:
             self.ttylogFile = "{}/{}-{}-{}e.log".format(
@@ -65,12 +70,12 @@ class ExecTerm(base_protocol.BaseProtocol):
             )
             ttylog.ttylog_open(self.ttylogFile, self.startTime)
 
-    def parse_packet(self, parent, payload):
+    def parse_packet(self, parent: str, data: bytes) -> None:
         if self.ttylogEnabled:
             ttylog.ttylog_write(
-                self.ttylogFile, len(payload), ttylog.TYPE_OUTPUT, time.time(), payload
+                self.ttylogFile, len(data), ttylog.TYPE_OUTPUT, time.time(), data
             )
-            self.ttylogSize += len(payload)
+            self.ttylogSize += len(data)
 
     def channel_closed(self):
         if self.ttylogEnabled:

@@ -3,6 +3,7 @@
 
 # coding=utf-8
 
+from __future__ import annotations
 
 import codecs
 import datetime
@@ -10,31 +11,33 @@ import getopt
 import random
 import re
 import time
-from typing import Callable, Dict
 
 from twisted.internet import error, reactor
 from twisted.python import failure, log
 
 from cowrie.core import utils
 from cowrie.shell.command import HoneyPotCommand
-from cowrie.shell.honeypot import HoneyPotShell
+from typing import TYPE_CHECKING
 
-commands: Dict[str, Callable] = {}
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+commands: dict[str, Callable] = {}
 
 
-class command_whoami(HoneyPotCommand):
-    def call(self):
+class Command_whoami(HoneyPotCommand):
+    def call(self) -> None:
         self.write(f"{self.protocol.user.username}\n")
 
 
-commands["/usr/bin/whoami"] = command_whoami
-commands["whoami"] = command_whoami
-commands["/usr/bin/users"] = command_whoami
-commands["users"] = command_whoami
+commands["/usr/bin/whoami"] = Command_whoami
+commands["whoami"] = Command_whoami
+commands["/usr/bin/users"] = Command_whoami
+commands["users"] = Command_whoami
 
 
-class command_help(HoneyPotCommand):
-    def call(self):
+class Command_help(HoneyPotCommand):
+    def call(self) -> None:
         self.write(
             """GNU bash, version 4.2.37(1)-release (x86_64-pc-linux-gnu)
 These shell commands are defined internally.  Type `help' to see this list.
@@ -85,21 +88,21 @@ A star (*) next to a name means that the command is disabled.
         )
 
 
-commands["help"] = command_help
+commands["help"] = Command_help
 
 
-class command_w(HoneyPotCommand):
-    def call(self):
+class Command_w(HoneyPotCommand):
+    def call(self) -> None:
         self.write(
-            " %s up %s,  1 user,  load average: 0.00, 0.00, 0.00\n"
-            % (time.strftime("%H:%M:%S"), utils.uptime(self.protocol.uptime()))
+            " {} up {},  1 user,  load average: 0.00, 0.00, 0.00\n".format(
+                time.strftime("%H:%M:%S"), utils.uptime(self.protocol.uptime())
+            )
         )
         self.write(
             "USER     TTY      FROM              LOGIN@   IDLE   JCPU   PCPU WHAT\n"
         )
         self.write(
-            "%-8s pts/0    %s %s    0.00s  0.00s  0.00s w\n"
-            % (
+            "{:8s} pts/0    {} {}    0.00s  0.00s  0.00s w\n".format(
                 self.protocol.user.username,
                 self.protocol.clientIP[:17].ljust(17),
                 time.strftime("%H:%M", time.localtime(self.protocol.logintime)),
@@ -107,15 +110,14 @@ class command_w(HoneyPotCommand):
         )
 
 
-commands["/usr/bin/w"] = command_w
-commands["w"] = command_w
+commands["/usr/bin/w"] = Command_w
+commands["w"] = Command_w
 
 
-class command_who(HoneyPotCommand):
-    def call(self):
+class Command_who(HoneyPotCommand):
+    def call(self) -> None:
         self.write(
-            "%-8s pts/0        %s %s (%s)\n"
-            % (
+            "{:8s} pts/0        {} {} ({})\n".format(
                 self.protocol.user.username,
                 time.strftime("%Y-%m-%d", time.localtime(self.protocol.logintime)),
                 time.strftime("%H:%M", time.localtime(self.protocol.logintime)),
@@ -124,13 +126,12 @@ class command_who(HoneyPotCommand):
         )
 
 
-commands["/usr/bin/who"] = command_who
-commands["who"] = command_who
+commands["/usr/bin/who"] = Command_who
+commands["who"] = Command_who
 
 
-class command_echo(HoneyPotCommand):
-    def call(self):
-
+class Command_echo(HoneyPotCommand):
+    def call(self) -> None:
         newline = True
         escape_decode = False
 
@@ -164,8 +165,8 @@ class command_echo(HoneyPotCommand):
                 string += "\n"
 
             if escape_decode:
-                string = codecs.escape_decode(string)[0]
-                self.writeBytes(string)
+                data: bytes = codecs.escape_decode(string)[0]  # type: ignore
+                self.writeBytes(data)
             else:
                 self.write(string)
 
@@ -173,13 +174,13 @@ class command_echo(HoneyPotCommand):
             log.msg("echo command received Python incorrect hex escape")
 
 
-commands["/bin/echo"] = command_echo
-commands["echo"] = command_echo
+commands["/bin/echo"] = Command_echo
+commands["echo"] = Command_echo
 
 
-class command_printf(HoneyPotCommand):
-    def call(self):
-        if not len(self.args):
+class Command_printf(HoneyPotCommand):
+    def call(self) -> None:
+        if not self.args:
             self.write("printf: usage: printf [-v var] format [arguments]\n")
         else:
             if "-v" not in self.args and len(self.args) < 2:
@@ -196,40 +197,28 @@ class command_printf(HoneyPotCommand):
                 if s.endswith("\\c"):
                     s = s[:-2]
 
-                self.write(codecs.escape_decode(s)[0])
+                data: bytes = codecs.escape_decode(s)[0]  # type: ignore
+                self.writeBytes(data)
 
 
-commands["/usr/bin/printf"] = command_printf
-commands["printf"] = command_printf
+commands["/usr/bin/printf"] = Command_printf
+commands["printf"] = Command_printf
 
 
-class command_exit(HoneyPotCommand):
-    def call(self):
-        stat = failure.Failure(error.ProcessDone(status=""))
-        self.protocol.terminal.transport.processEnded(stat)
-
-    def exit(self):
-        pass
-
-
-commands["exit"] = command_exit
-commands["logout"] = command_exit
-
-
-class command_clear(HoneyPotCommand):
-    def call(self):
+class Command_clear(HoneyPotCommand):
+    def call(self) -> None:
         self.protocol.terminal.reset()
 
 
-commands["/usr/bin/clear"] = command_clear
-commands["clear"] = command_clear
-commands["/usr/bin/reset"] = command_clear
-commands["reset"] = command_clear
+commands["/usr/bin/clear"] = Command_clear
+commands["clear"] = Command_clear
+commands["/usr/bin/reset"] = Command_clear
+commands["reset"] = Command_clear
 
 
-class command_hostname(HoneyPotCommand):
-    def call(self):
-        if len(self.args):
+class Command_hostname(HoneyPotCommand):
+    def call(self) -> None:
+        if self.args:
             if self.protocol.user.username == "root":
                 self.protocol.hostname = self.args[0]
             else:
@@ -238,15 +227,15 @@ class command_hostname(HoneyPotCommand):
             self.write(f"{self.protocol.hostname}\n")
 
 
-commands["/bin/hostname"] = command_hostname
-commands["hostname"] = command_hostname
+commands["/bin/hostname"] = Command_hostname
+commands["hostname"] = Command_hostname
 
 
-class command_ps(HoneyPotCommand):
-    def call(self):
+class Command_ps(HoneyPotCommand):
+    def call(self) -> None:
         user = self.protocol.user.username
         args = ""
-        if len(self.args):
+        if self.args:
             args = self.args[0].strip()
         (
             _user,
@@ -751,7 +740,7 @@ class command_ps(HoneyPotCommand):
                     "Ss   ",
                     "Nov08",
                     "   0:00 ",
-                    "/usr/sbin/sshd: %s@pts/0" % user,
+                    f"/usr/sbin/sshd: {user}@pts/0",
                 ),
                 (
                     "%s".ljust(8) % user,
@@ -777,11 +766,10 @@ class command_ps(HoneyPotCommand):
                     "R+   ",
                     "04:32",
                     "   0:00 ",
-                    "ps %s" % " ".join(self.args),
+                    "ps {}".format(" ".join(self.args)),
                 ),
             ]
 
-        output = output_array
         for i in range(len(output_array)):
             if i != 0:
                 if "a" not in args and output_array[i][_user].strip() != user:
@@ -821,35 +809,34 @@ class command_ps(HoneyPotCommand):
             self.write(f"{s}\n")
 
 
-commands["/bin/ps"] = command_ps
-commands["ps"] = command_ps
+commands["/bin/ps"] = Command_ps
+commands["ps"] = Command_ps
 
 
-class command_id(HoneyPotCommand):
-    def call(self):
+class Command_id(HoneyPotCommand):
+    def call(self) -> None:
         u = self.protocol.user
         self.write(
-            "uid=%d(%s) gid=%d(%s) groups=%d(%s)\n"
-            % (u.uid, u.username, u.gid, u.username, u.gid, u.username)
+            f"uid={u.uid}({u.username}) gid={u.gid}({u.username}) groups={u.gid}({u.username})\n"
         )
 
 
-commands["/usr/bin/id"] = command_id
-commands["id"] = command_id
+commands["/usr/bin/id"] = Command_id
+commands["id"] = Command_id
 
 
-class command_passwd(HoneyPotCommand):
-    def start(self):
+class Command_passwd(HoneyPotCommand):
+    def start(self) -> None:
         self.write("Enter new UNIX password: ")
         self.protocol.password_input = True
         self.callbacks = [self.ask_again, self.finish]
-        self.passwd = None
+        self.passwd: str | None = None
 
-    def ask_again(self, line):
+    def ask_again(self, line: str) -> None:
         self.passwd = line
         self.write("Retype new UNIX password: ")
 
-    def finish(self, line):
+    def finish(self, line: str) -> None:
         self.protocol.password_input = False
 
         if line != self.passwd or self.passwd == "*":
@@ -858,7 +845,7 @@ class command_passwd(HoneyPotCommand):
             self.write("passwd: password updated successfully\n")
         self.exit()
 
-    def lineReceived(self, line):
+    def lineReceived(self, line: str) -> None:
         log.msg(
             eventid="cowrie.command.success",
             realm="passwd",
@@ -869,13 +856,13 @@ class command_passwd(HoneyPotCommand):
         self.callbacks.pop(0)(line)
 
 
-commands["/usr/bin/passwd"] = command_passwd
-commands["passwd"] = command_passwd
+commands["/usr/bin/passwd"] = Command_passwd
+commands["passwd"] = Command_passwd
 
 
-class command_shutdown(HoneyPotCommand):
-    def start(self):
-        if len(self.args) and self.args[0].strip().count("--help"):
+class Command_shutdown(HoneyPotCommand):
+    def start(self) -> None:
+        if self.args and self.args[0].strip().count("--help"):
             output = [
                 "Usage:     shutdown [-akrhHPfnc] [-t secs] time [warning message]",
                 "-a:      use /etc/shutdown.allow ",
@@ -905,7 +892,7 @@ class command_shutdown(HoneyPotCommand):
             )
             self.write("\n")
             self.write("The system is going down for maintenance NOW!\n")
-            reactor.callLater(3, self.finish)
+            reactor.callLater(3, self.finish)  # type: ignore[attr-defined]
         elif (
             len(self.args) > 1
             and self.args[0].strip().count("-r")
@@ -917,185 +904,144 @@ class command_shutdown(HoneyPotCommand):
             )
             self.write("\n")
             self.write("The system is going down for reboot NOW!\n")
-            reactor.callLater(3, self.finish)
+            reactor.callLater(3, self.finish)  # type: ignore[attr-defined]
         else:
             self.write("Try `shutdown --help' for more information.\n")
             self.exit()
 
-    def finish(self):
+    def finish(self) -> None:
         stat = failure.Failure(error.ProcessDone(status=""))
         self.protocol.terminal.transport.processEnded(stat)
 
 
-commands["/sbin/shutdown"] = command_shutdown
-commands["shutdown"] = command_shutdown
-commands["/sbin/poweroff"] = command_shutdown
-commands["poweroff"] = command_shutdown
-commands["/sbin/halt"] = command_shutdown
-commands["halt"] = command_shutdown
+commands["/sbin/shutdown"] = Command_shutdown
+commands["shutdown"] = Command_shutdown
+commands["/sbin/poweroff"] = Command_shutdown
+commands["poweroff"] = Command_shutdown
+commands["/sbin/halt"] = Command_shutdown
+commands["halt"] = Command_shutdown
 
 
-class command_reboot(HoneyPotCommand):
-    def start(self):
+class Command_reboot(HoneyPotCommand):
+    def start(self) -> None:
         self.write("\n")
         self.write(
             f"Broadcast message from root@{self.protocol.hostname} (pts/0) ({time.ctime()}):\n\n"
         )
         self.write("The system is going down for reboot NOW!\n")
-        reactor.callLater(3, self.finish)
+        reactor.callLater(3, self.finish)  # type: ignore[attr-defined]
 
-    def finish(self):
+    def finish(self) -> None:
         stat = failure.Failure(error.ProcessDone(status=""))
         self.protocol.terminal.transport.processEnded(stat)
 
 
-commands["/sbin/reboot"] = command_reboot
-commands["reboot"] = command_reboot
+commands["/sbin/reboot"] = Command_reboot
+commands["reboot"] = Command_reboot
 
 
-class command_history(HoneyPotCommand):
-    def call(self):
+class Command_history(HoneyPotCommand):
+    def call(self) -> None:
         try:
-            if len(self.args) and self.args[0] == "-c":
+            if self.args and self.args[0] == "-c":
                 self.protocol.historyLines = []
                 self.protocol.historyPosition = 0
                 return
             count = 1
             for line in self.protocol.historyLines:
-                self.write(" {}  {}\n".format(str(count).rjust(4), line))
+                self.write(f" {str(count).rjust(4)}  {line}\n")
                 count += 1
         except Exception:
             # Non-interactive shell, do nothing
             pass
 
 
-commands["history"] = command_history
+commands["history"] = Command_history
 
 
-class command_date(HoneyPotCommand):
-    def call(self):
+class Command_date(HoneyPotCommand):
+    def call(self) -> None:
         time = datetime.datetime.utcnow()
         self.write("{}\n".format(time.strftime("%a %b %d %H:%M:%S UTC %Y")))
 
 
-commands["/bin/date"] = command_date
-commands["date"] = command_date
+commands["/bin/date"] = Command_date
+commands["date"] = Command_date
 
 
-class command_yes(HoneyPotCommand):
-    def start(self):
+class Command_yes(HoneyPotCommand):
+    def start(self) -> None:
         self.y()
 
-    def y(self):
-        if len(self.args):
+    def y(self) -> None:
+        if self.args:
             self.write("{}\n".format(" ".join(self.args)))
         else:
             self.write("y\n")
-        self.scheduled = reactor.callLater(0.01, self.y)
+        self.scheduled = reactor.callLater(0.01, self.y)  # type: ignore[attr-defined]
 
-    def handle_CTRL_C(self):
+    def handle_CTRL_C(self) -> None:
         self.scheduled.cancel()
         self.exit()
 
 
-commands["/usr/bin/yes"] = command_yes
-commands["yes"] = command_yes
+commands["/usr/bin/yes"] = Command_yes
+commands["yes"] = Command_yes
 
 
-class command_sh(HoneyPotCommand):
-    def call(self):
-        if len(self.args) and self.args[0].strip() == "-c":
+class Command_php(HoneyPotCommand):
+    HELP = (
+        "Usage: php [options] [-f] <file> [--] [args...]\n"
+        "       php [options] -r <code> [--] [args...]\n"
+        "       php [options] [-B <begin_code>] -R <code> [-E <end_code>] [--] [args...]\n"
+        "       php [options] [-B <begin_code>] -F <file> [-E <end_code>] [--] [args...]\n"
+        "       php [options] -- [args...]\n"
+        "       php [options] -a\n"
+        "\n"
+        "  -a               Run interactively\n"
+        "  -c <path>|<file> Look for php.ini file in this directory\n"
+        "  -n               No php.ini file will be used\n"
+        "  -d foo[=bar]     Define INI entry foo with value 'bar'\n"
+        "  -e               Generate extended information for debugger/profiler\n"
+        "  -f <file>        Parse and execute <file>.\n"
+        "  -h               This help\n"
+        "  -i               PHP information\n"
+        "  -l               Syntax check only (lint)\n"
+        "  -m               Show compiled in modules\n"
+        "  -r <code>        Run PHP <code> without using script tags <?..?>\n"
+        "  -B <begin_code>  Run PHP <begin_code> before processing input lines\n"
+        "  -R <code>        Run PHP <code> for every input line\n"
+        "  -F <file>        Parse and execute <file> for every input line\n"
+        "  -E <end_code>    Run PHP <end_code> after processing all input lines\n"
+        "  -H               Hide any passed arguments from external tools.\n"
+        "  -s               Output HTML syntax highlighted source.\n"
+        "  -v               Version number\n"
+        "  -w               Output source with stripped comments and whitespace.\n"
+        "  -z <file>        Load Zend extension <file>.\n"
+        "\n"
+        "  args...          Arguments passed to script. Use -- args when first argument\n"
+        "                   starts with - or script is read from stdin\n"
+        "\n"
+        "  --ini            Show configuration file names\n"
+        "\n"
+        "  --rf <name>      Show information about function <name>.\n"
+        "  --rc <name>      Show information about class <name>.\n"
+        "  --re <name>      Show information about extension <name>.\n"
+        "  --ri <name>      Show configuration for extension <name>.\n"
+        "\n"
+    )
 
-            line = " ".join(self.args[1:])
+    VERSION = "PHP 5.3.5 (cli)\n" "Copyright (c) 1997-2010 The PHP Group\n"
 
-            # it might be sh -c 'echo "sometext"', so don't use line.strip('\'\"')
-            if (line[0] == "'" and line[-1] == "'") or (
-                line[0] == '"' and line[-1] == '"'
-            ):
-                line = line[1:-1]
-
-            self.execute_commands(line)
-
-        elif self.input_data:
-            self.execute_commands(self.input_data.decode("utf8"))
-
-        # TODO: handle spawning multiple shells, support other sh flags
-
-    def execute_commands(self, cmds):
-        # self.input_data holds commands passed via PIPE
-        # create new HoneyPotShell for our a new 'sh' shell
-        self.protocol.cmdstack.append(HoneyPotShell(self.protocol, interactive=False))
-
-        # call lineReceived method that indicates that we have some commands to parse
-        self.protocol.cmdstack[-1].lineReceived(cmds)
-
-        # remove the shell
-        self.protocol.cmdstack.pop()
-
-
-commands["/bin/bash"] = command_sh
-commands["bash"] = command_sh
-commands["/bin/sh"] = command_sh
-commands["sh"] = command_sh
-
-
-class command_php(HoneyPotCommand):
-    def start(self):
-        if not len(self.args):
-            pass
-        elif self.args[0] == "-v":
-            output = ("PHP 5.3.5 (cli)", "Copyright (c) 1997-2010 The PHP Group")
-            for line in output:
-                self.write(f"{line}\n")
-            self.exit()
-        elif self.args[0] == "-h":
-            output = [
-                "Usage: php [options] [-f] <file> [--] [args...]",
-                "       php [options] -r <code> [--] [args...]",
-                "       php [options] [-B <begin_code>] -R <code> [-E <end_code>] [--] [args...]",
-                "       php [options] [-B <begin_code>] -F <file> [-E <end_code>] [--] [args...]",
-                "       php [options] -- [args...]",
-                "       php [options] -a",
-                "",
-                "  -a               Run interactively",
-                "  -c <path>|<file> Look for php.ini file in this directory",
-                "  -n               No php.ini file will be used",
-                "  -d foo[=bar]     Define INI entry foo with value 'bar'",
-                "  -e               Generate extended information for debugger/profiler",
-                "  -f <file>        Parse and execute <file>.",
-                "  -h               This help",
-                "  -i               PHP information",
-                "  -l               Syntax check only (lint)",
-                "  -m               Show compiled in modules",
-                "  -r <code>        Run PHP <code> without using script tags <?..?>",
-                "  -B <begin_code>  Run PHP <begin_code> before processing input lines",
-                "  -R <code>        Run PHP <code> for every input line",
-                "  -F <file>        Parse and execute <file> for every input line",
-                "  -E <end_code>    Run PHP <end_code> after processing all input lines",
-                "  -H               Hide any passed arguments from external tools.",
-                "  -s               Output HTML syntax highlighted source.",
-                "  -v               Version number",
-                "  -w               Output source with stripped comments and whitespace.",
-                "  -z <file>        Load Zend extension <file>.",
-                "",
-                "  args...          Arguments passed to script. Use -- args when first argument",
-                "                   starts with - or script is read from stdin",
-                "",
-                "  --ini            Show configuration file names",
-                "",
-                "  --rf <name>      Show information about function <name>.",
-                "  --rc <name>      Show information about class <name>.",
-                "  --re <name>      Show information about extension <name>.",
-                "  --ri <name>      Show configuration for extension <name>.",
-                "",
-            ]
-            for line in output:
-                self.write(f"{line}\n")
-            self.exit()
-        else:
+    def start(self) -> None:
+        if self.args:
+            if self.args[0] == "-v":
+                self.write(Command_php.VERSION)
+            elif self.args[0] == "-h":
+                self.write(Command_php.HELP)
             self.exit()
 
-    def lineReceived(self, line):
+    def lineReceived(self, line: str) -> None:
         log.msg(
             eventid="cowrie.command.success",
             realm="php",
@@ -1103,16 +1049,16 @@ class command_php(HoneyPotCommand):
             format="INPUT (%(realm)s): %(input)s",
         )
 
-    def handle_CTRL_D(self):
+    def handle_CTRL_D(self) -> None:
         self.exit()
 
 
-commands["/usr/bin/php"] = command_php
-commands["php"] = command_php
+commands["/usr/bin/php"] = Command_php
+commands["php"] = Command_php
 
 
-class command_chattr(HoneyPotCommand):
-    def call(self):
+class Command_chattr(HoneyPotCommand):
+    def call(self) -> None:
         if len(self.args) < 1:
             self.write("Usage: chattr [-RVf] [-+=AacDdeijsSu] [-v version] files...\n")
             return
@@ -1127,45 +1073,45 @@ class command_chattr(HoneyPotCommand):
             )
 
 
-commands["/usr/bin/chattr"] = command_chattr
-commands["chattr"] = command_chattr
+commands["/usr/bin/chattr"] = Command_chattr
+commands["chattr"] = Command_chattr
 
 
-class command_set(HoneyPotCommand):
+class Command_set(HoneyPotCommand):
     # Basic functionaltly (show only), need enhancements
     # This will show ALL environ vars, not only the global ones
     # With enhancements it should work like env when -o posix is used
-    def call(self):
+    def call(self) -> None:
         for i in sorted(list(self.environ.keys())):
-            self.write("{}={}\n".format(i, self.environ[i]))
+            self.write(f"{i}={self.environ[i]}\n")
 
 
-commands["set"] = command_set
+commands["set"] = Command_set
 
 
-class command_nop(HoneyPotCommand):
-    def call(self):
+class Command_nop(HoneyPotCommand):
+    def call(self) -> None:
         pass
 
 
-commands["umask"] = command_nop
-commands["unset"] = command_nop
-commands["export"] = command_nop
-commands["alias"] = command_nop
-commands["jobs"] = command_nop
-commands["kill"] = command_nop
-commands["/bin/kill"] = command_nop
-commands["/bin/pkill"] = command_nop
-commands["/bin/killall"] = command_nop
-commands["/bin/killall5"] = command_nop
-commands["/bin/su"] = command_nop
-commands["su"] = command_nop
-commands["/bin/chown"] = command_nop
-commands["chown"] = command_nop
-commands["/bin/chgrp"] = command_nop
-commands["chgrp"] = command_nop
-commands["/usr/bin/chattr"] = command_nop
-commands["chattr"] = command_nop
-commands[":"] = command_nop
-commands["do"] = command_nop
-commands["done"] = command_nop
+commands["umask"] = Command_nop
+commands["unset"] = Command_nop
+commands["export"] = Command_nop
+commands["alias"] = Command_nop
+commands["jobs"] = Command_nop
+commands["kill"] = Command_nop
+commands["/bin/kill"] = Command_nop
+commands["/bin/pkill"] = Command_nop
+commands["/bin/killall"] = Command_nop
+commands["/bin/killall5"] = Command_nop
+commands["/bin/su"] = Command_nop
+commands["su"] = Command_nop
+commands["/bin/chown"] = Command_nop
+commands["chown"] = Command_nop
+commands["/bin/chgrp"] = Command_nop
+commands["chgrp"] = Command_nop
+commands["/usr/bin/chattr"] = Command_nop
+commands["chattr"] = Command_nop
+commands[":"] = Command_nop
+commands["do"] = Command_nop
+commands["done"] = Command_nop

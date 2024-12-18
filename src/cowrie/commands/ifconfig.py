@@ -1,54 +1,42 @@
 # Copyright (c) 2014 Peter Reuterås <peter@reuteras.com>
 # See the COPYRIGHT file for more information
 
+from __future__ import annotations
 
 from random import randint, randrange
 
 from cowrie.shell.command import HoneyPotCommand
 
-HWaddr = "{:02x}:{:02x}:{:02x}:{:02x}:{:02x}:{:02x}".format(
-    randint(0, 255),
-    randint(0, 255),
-    randint(0, 255),
-    randint(0, 255),
-    randint(0, 255),
-    randint(0, 255),
-)
+HWaddr = f"{randint(0, 255):02x}:{randint(0, 255):02x}:{randint(0, 255):02x}:{randint(0, 255):02x}:{randint(0, 255):02x}:{randint(0, 255):02x}"
 
-inet6 = "fe{:02x}::{:02x}:{:02x}ff:fe{:02x}:{:02x}01/64".format(
-    randint(0, 255),
-    randrange(111, 888),
-    randint(0, 255),
-    randint(0, 255),
-    randint(0, 255),
-)
+inet6 = f"fe{randint(0, 255):02x}::{randrange(111, 888):02x}:{randint(0, 255):02x}ff:fe{randint(0, 255):02x}:{randint(0, 255):02x}01/64"
 
 commands = {}
 
 
-class command_ifconfig(HoneyPotCommand):
+class Command_ifconfig(HoneyPotCommand):
     @staticmethod
-    def generate_packets():
+    def generate_packets() -> int:
         return randrange(222222, 555555)
 
     @staticmethod
-    def convert_bytes_to_mx(bytes_eth0):
+    def convert_bytes_to_mx(bytes_eth0: int) -> str:
         mb = float(bytes_eth0) / 1000 / 1000
         return f"{mb:.1f}"
 
-    def calculate_rx(self):
+    def calculate_rx(self) -> tuple[int, str]:
         rx_bytes = randrange(111111111, 555555555)
         return rx_bytes, self.convert_bytes_to_mx(rx_bytes)
 
-    def calculate_tx(self):
+    def calculate_tx(self) -> tuple[int, str]:
         rx_bytes = randrange(11111111, 55555555)
         return rx_bytes, self.convert_bytes_to_mx(rx_bytes)
 
-    def calculate_lo(self):
+    def calculate_lo(self) -> tuple[int, str]:
         lo_bytes = randrange(11111111, 55555555)
         return lo_bytes, self.convert_bytes_to_mx(lo_bytes)
 
-    def call(self):
+    def call(self) -> None:
         rx_bytes_eth0, rx_mb_eth0 = self.calculate_rx()
         tx_bytes_eth0, tx_mb_eth0 = self.calculate_tx()
         lo_bytes, lo_mb = self.calculate_lo()
@@ -90,5 +78,5 @@ lo        Link encap:Local Loopback
         self.write(f"{result}\n")
 
 
-commands["/sbin/ifconfig"] = command_ifconfig
-commands["ifconfig"] = command_ifconfig
+commands["/sbin/ifconfig"] = Command_ifconfig
+commands["ifconfig"] = Command_ifconfig

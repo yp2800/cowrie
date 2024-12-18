@@ -1,6 +1,7 @@
 # Copyright (c) 2018 Danilo Vargas <danilo.vargas@csiete.org>
 # See the COPYRIGHT file for more information
 
+from __future__ import annotations
 
 import os
 
@@ -10,8 +11,8 @@ from cowrie.shell.fs import A_NAME
 commands = {}
 
 
-class command_du(HoneyPotCommand):
-    def message_help(self):
+class Command_du(HoneyPotCommand):
+    def message_help(self) -> str:
         return """Usage: du [OPTION]... [FILE]...
   or:  du [OPTION]... --files0-from=F
 Summarize disk usage of the set of FILEs, recursively for directories.
@@ -75,7 +76,7 @@ Report du translation bugs to <http://translationproject.org/team/>
 Full documentation at: <http://www.gnu.org/software/coreutils/du>
 or available locally via: info '(coreutils) du invocation'\n"""
 
-    def call(self):
+    def call(self) -> None:
         self.showHidden = False
         self.showDirectories = False
         path = self.protocol.cwd
@@ -88,9 +89,9 @@ or available locally via: info '(coreutils) du invocation'\n"""
             else:
                 self.du_show(path)
         else:
-            self.du_show(path, all=True)
+            self.du_show(path, showall=True)
 
-    def du_show(self, path, all=False):
+    def du_show(self, path: str, showall: bool = False) -> None:
         try:
             if self.protocol.fs.isdir(path) and not self.showDirectories:
                 files = self.protocol.fs.get_path(path)[:]
@@ -115,7 +116,7 @@ or available locally via: info '(coreutils) du invocation'\n"""
         if not filenames:
             return
         for filename in filenames:
-            if all:
+            if showall:
                 isdir = self.protocol.fs.isdir(os.path.join(path, filename))
                 if isdir:
                     filename = f"4       ./{filename}\n"
@@ -123,8 +124,8 @@ or available locally via: info '(coreutils) du invocation'\n"""
             else:
                 filename = f"4       {filename}\n"
                 self.write(filename)
-        if all:
+        if showall:
             self.write("36      .\n")
 
 
-commands["du"] = command_du
+commands["du"] = Command_du

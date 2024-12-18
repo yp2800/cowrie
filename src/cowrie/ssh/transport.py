@@ -7,6 +7,7 @@ encryption and the compression. The transport layer is described in
 RFC 4253.
 """
 
+from __future__ import annotations
 
 import re
 import struct
@@ -14,11 +15,13 @@ import time
 import uuid
 import zlib
 from hashlib import md5
+from typing import Any
 
 from twisted.conch.ssh import transport
 from twisted.conch.ssh.common import getNS
+from twisted.internet.protocol import connectionDone
 from twisted.protocols.policies import TimeoutMixin
-from twisted.python import log, randbytes
+from twisted.python import failure, log, randbytes
 
 from cowrie.core.config import CowrieConfig
 
@@ -26,6 +29,8 @@ from cowrie.core.config import CowrieConfig
 class HoneyPotSSHTransport(transport.SSHServerTransport, TimeoutMixin):
     startTime: float = 0.0
     gotVersion: bool = False
+    buf: bytes
+    transportId: str
     ipv4rex = re.compile(r"^::ffff:(\d+\.\d+\.\d+\.\d+)$")
     auth_timeout: int = CowrieConfig.getint(
         "honeypot", "authentication_timeout", fallback=120
@@ -33,8 +38,12 @@ class HoneyPotSSHTransport(transport.SSHServerTransport, TimeoutMixin):
     interactive_timeout: int = CowrieConfig.getint(
         "honeypot", "interactive_timeout", fallback=300
     )
+    ourVersionString: bytes  # set by factory
+    transport: Any
+    outgoingCompression: Any
+    _blockedByKeyExchange: Any
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         """
         Return a pretty representation of this object.
 
@@ -43,12 +52,14 @@ class HoneyPotSSHTransport(transport.SSHServerTransport, TimeoutMixin):
         """
         return f"Cowrie SSH Transport to {self.transport.getPeer().host}"
 
-    def connectionMade(self):
+    def connectionMade(self) -> None:
         """
         Called when the connection is made from the other side.
         We send our version, but wait with sending KEXINIT
         """
-        self.transportId: str = uuid.uuid4().hex[:12]
+        self.buf = b""
+
+        self.transportId = uuid.uuid4().hex[:12]
         src_ip: str = self.transport.getPeer().host
 
         ipv4_search = self.ipv4rex.search(src_ip)
@@ -67,16 +78,16 @@ class HoneyPotSSHTransport(transport.SSHServerTransport, TimeoutMixin):
             protocol="ssh",
         )
 
-        self.transport.write(f"{self.ourVersionString}\r\n".encode("ascii"))
+        self.transport.write(self.ourVersionString + b"\r\n")
         self.currentEncryptions = transport.SSHCiphers(
             b"none", b"none", b"none", b"none"
         )
         self.currentEncryptions.setKeys(b"", b"", b"", b"", b"", b"")
 
-        self.startTime = time.time()
+        self.startTime: float = time.time()
         self.setTimeout(self.auth_timeout)
 
-    def sendKexInit(self):
+    def sendKexInit(self) -> None:
         """
         Don't send key exchange prematurely
         """
@@ -84,14 +95,14 @@ class HoneyPotSSHTransport(transport.SSHServerTransport, TimeoutMixin):
             return
         transport.SSHServerTransport.sendKexInit(self)
 
-    def _unsupportedVersionReceived(self, remoteVersion):
+    def _unsupportedVersionReceived(self, remoteVersion: bytes) -> None:
         """
         Change message to be like OpenSSH
         """
         self.transport.write(b"Protocol major versions differ.\n")
         self.transport.loseConnection()
 
-    def dataReceived(self, data):
+    def dataReceived(self, data: bytes) -> None:
         """
         First, check for the version string (SSH-2.0-*).  After that has been
         received, this method adds data to the buffer, and pulls out any
@@ -103,41 +114,41 @@ class HoneyPotSSHTransport(transport.SSHServerTransport, TimeoutMixin):
         if not self.gotVersion:
             if b"\n" not in self.buf:
                 return
-            self.otherVersionString = self.buf.split(b"\n")[0].strip()
+            self.otherVersionString: bytes = self.buf.split(b"\n")[0].strip()
             log.msg(
                 eventid="cowrie.client.version",
-                version=repr(self.otherVersionString),
+                version=self.otherVersionString.decode(
+                    "utf-8", errors="backslashreplace"
+                ),
                 format="Remote SSH version: %(version)s",
             )
-            m = re.match(br"SSH-(\d+.\d+)-(.*)", self.otherVersionString)
+            m = re.match(rb"SSH-(\d+\.\d+)-(.*)", self.otherVersionString)
             if m is None:
                 log.msg(
-                    "Bad protocol version identification: {}".format(
-                        repr(self.otherVersionString)
-                    )
+                    f"Bad protocol version identification: {self.otherVersionString!r}"
                 )
-                self.transport.write(b"Protocol mismatch.\n")
+                # OpenSSH sending the same message
+                self.transport.write(b"Invalid SSH identification string.\n")
                 self.transport.loseConnection()
                 return
-            else:
-                self.gotVersion = True
-                remote_version = m.group(1)
-                if remote_version not in self.supportedVersions:
-                    self._unsupportedVersionReceived(None)
-                    return
-                i = self.buf.index(b"\n")
-                self.buf = self.buf[i + 1 :]
-                self.sendKexInit()
+            self.gotVersion = True
+            remote_version = m.group(1)
+            if remote_version not in self.supportedVersions:
+                self._unsupportedVersionReceived(self.otherVersionString)
+                return
+            i = self.buf.index(b"\n")
+            self.buf = self.buf[i + 1 :]
+            self.sendKexInit()
         packet = self.getPacket()
         while packet:
             messageNum = ord(packet[0:1])
             self.dispatchMessage(messageNum, packet[1:])
             packet = self.getPacket()
 
-    def dispatchMessage(self, message_num, payload):
-        transport.SSHServerTransport.dispatchMessage(self, message_num, payload)
+    def dispatchMessage(self, messageNum: int, payload: bytes) -> None:
+        transport.SSHServerTransport.dispatchMessage(self, messageNum, payload)
 
-    def sendPacket(self, messageType, payload):
+    def sendPacket(self, messageType: int, payload: bytes) -> None:
         """
         Override because OpenSSH pads with 0 on KEXINIT
         """
@@ -157,6 +168,7 @@ class HoneyPotSSHTransport(transport.SSHServerTransport, TimeoutMixin):
         lenPad = bs - (totalSize % bs)
         if lenPad < 4:
             lenPad = lenPad + bs
+        padding: bytes
         if messageType == transport.MSG_KEXINIT:
             padding = b"\0" * lenPad
         else:
@@ -169,12 +181,12 @@ class HoneyPotSSHTransport(transport.SSHServerTransport, TimeoutMixin):
         self.transport.write(encPacket)
         self.outgoingPacketSequence += 1
 
-    def ssh_KEXINIT(self, packet):
+    def ssh_KEXINIT(self, packet: bytes) -> Any:
         k = getNS(packet[16:], 10)
         strings, _ = k[:-1], k[-1]
-        (kexAlgs, keyAlgs, encCS, _, macCS, _, compCS, _, langCS, _) = [
+        (kexAlgs, keyAlgs, encCS, _, macCS, _, compCS, _, langCS, _) = (
             s.split(b",") for s in strings
-        ]
+        )
 
         # hassh SSH client fingerprint
         # https://github.com/salesforce/hassh
@@ -182,9 +194,7 @@ class HoneyPotSSHTransport(transport.SSHServerTransport, TimeoutMixin):
         cencCS = ",".join([alg.decode("utf-8") for alg in encCS])
         cmacCS = ",".join([alg.decode("utf-8") for alg in macCS])
         ccompCS = ",".join([alg.decode("utf-8") for alg in compCS])
-        hasshAlgorithms = "{kex};{enc};{mac};{cmp}".format(
-            kex=ckexAlgs, enc=cencCS, mac=cmacCS, cmp=ccompCS
-        )
+        hasshAlgorithms = f"{ckexAlgs};{cencCS};{cmacCS};{ccompCS}"
         hassh = md5(hasshAlgorithms.encode("utf-8")).hexdigest()
 
         log.msg(
@@ -202,7 +212,7 @@ class HoneyPotSSHTransport(transport.SSHServerTransport, TimeoutMixin):
 
         return transport.SSHServerTransport.ssh_KEXINIT(self, packet)
 
-    def timeoutConnection(self):
+    def timeoutConnection(self) -> None:
         """
         Make sure all sessions time out eventually.
         Timeout is reset when authentication succeeds.
@@ -228,7 +238,7 @@ class HoneyPotSSHTransport(transport.SSHServerTransport, TimeoutMixin):
 
         transport.SSHServerTransport.setService(self, service)
 
-    def connectionLost(self, reason):
+    def connectionLost(self, reason: failure.Failure = connectionDone) -> None:
         """
         This seems to be the only reliable place of catching lost connection
         """
@@ -236,10 +246,10 @@ class HoneyPotSSHTransport(transport.SSHServerTransport, TimeoutMixin):
         transport.SSHServerTransport.connectionLost(self, reason)
         self.transport.connectionLost(reason)
         self.transport = None
-        duration = time.time() - self.startTime
+        duration = f"{time.time() - self.startTime:.1f}"
         log.msg(
             eventid="cowrie.session.closed",
-            format="Connection lost after %(duration)d seconds",
+            format="Connection lost after %(duration)s seconds",
             duration=duration,
         )
 
@@ -257,7 +267,8 @@ class HoneyPotSSHTransport(transport.SSHServerTransport, TimeoutMixin):
         if b"bad packet length" not in desc:
             transport.SSHServerTransport.sendDisconnect(self, reason, desc)
         else:
-            self.transport.write(b"Packet corrupt\n")
+            # this message is used to detect Cowrie behaviour
+            # self.transport.write(b"Packet corrupt\n")
             log.msg(
                 f"[SERVER] - Disconnecting with error, code {reason} reason: {desc}"
             )

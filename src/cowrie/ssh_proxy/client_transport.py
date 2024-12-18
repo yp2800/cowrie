@@ -1,6 +1,10 @@
 # Copyright (c) 2019 Guilherme Borges <guilhermerosasborges@gmail.com>
 # All rights reserved.
 
+from __future__ import annotations
+
+from typing import Any
+
 from twisted.conch.ssh import transport
 from twisted.internet import defer, protocol
 from twisted.protocols.policies import TimeoutMixin
@@ -10,18 +14,25 @@ from cowrie.core.config import CowrieConfig
 from cowrie.ssh_proxy.util import bin_string_to_hex, string_to_hex
 
 
-def get_int(data, length=4):
+def get_int(data: bytes, length: int = 4) -> int:
     return int.from_bytes(data[:length], byteorder="big")
 
 
-def get_bool(data):
+def get_bool(data: bytes) -> bool:
     return bool(get_int(data, length=1))
 
 
-def get_string(data):
+def get_string(data: bytes) -> tuple[int, bytes]:
     length = get_int(data, 4)
     value = data[4 : length + 4]
     return length + 4, value
+
+
+class BackendSSHFactory(protocol.ClientFactory):
+    server: Any
+
+    def buildProtocol(self, addr):
+        return BackendSSHTransport(self)
 
 
 class BackendSSHTransport(transport.SSHClientTransport, TimeoutMixin):
@@ -30,11 +41,11 @@ class BackendSSHTransport(transport.SSHClientTransport, TimeoutMixin):
     authentication to that server, and sending messages it gets to the handler.
     """
 
-    def __init__(self, factory):
-        self.delayedPackets = []
-        self.factory = factory
-        self.canAuth = False
-        self.authDone = False
+    def __init__(self, factory: BackendSSHFactory):
+        self.delayedPackets: list[tuple[int, bytes]] = []
+        self.factory: BackendSSHFactory = factory
+        self.canAuth: bool = False
+        self.authDone: bool = False
 
         # keep these from when frontend authenticates
         self.frontendTriedUsername = None
@@ -46,7 +57,7 @@ class BackendSSHTransport(transport.SSHClientTransport, TimeoutMixin):
         self.factory.server.sshParse.set_client(self)
         transport.SSHClientTransport.connectionMade(self)
 
-    def verifyHostKey(self, pub_key, fingerprint):
+    def verifyHostKey(self, hostKey, fingerprint):
         return defer.succeed(True)
 
     def connectionSecure(self):
@@ -73,25 +84,26 @@ class BackendSSHTransport(transport.SSHClientTransport, TimeoutMixin):
         # we authenticate with the backend using the credentials provided
         # TODO create the account in the backend before (contact the pool of VMs for example)
         # so these credentials from the config may not be needed after all
-        username = CowrieConfig.get("proxy", "backend_user").encode()
-        password = CowrieConfig.get("proxy", "backend_pass").encode()
-
+        username = CowrieConfig.get("proxy", "backend_user")
+        password = CowrieConfig.get("proxy", "backend_pass")
         log.msg(f"Will auth with backend: {username}/{password}")
+
         self.sendPacket(5, bin_string_to_hex(b"ssh-userauth"))
         payload = (
-            bin_string_to_hex(username)
+            bin_string_to_hex(username.encode())
             + string_to_hex("ssh-connection")
             + string_to_hex("password")
             + b"\x00"
-            + bin_string_to_hex(password)
+            + bin_string_to_hex(password.encode())
         )
-
         self.sendPacket(50, payload)
         self.factory.server.backendConnected = True
 
         # send packets from the frontend that were waiting to go to the backend
         for packet in self.factory.server.delayedPackets:
-            self.factory.server.sshParse.parse_packet("[SERVER]", packet[0], packet[1])
+            self.factory.server.sshParse.parse_num_packet(
+                "[SERVER]", packet[0], packet[1]
+            )
         self.factory.server.delayedPackets = []
 
         # backend auth is done, attackers will now be connected to the backend
@@ -130,11 +142,11 @@ class BackendSSHTransport(transport.SSHClientTransport, TimeoutMixin):
         self.transport.loseConnection()
         self.factory.server.transport.loseConnection()
 
-    def dispatchMessage(self, message_num, payload):
-        if message_num in [6, 52]:
+    def dispatchMessage(self, messageNum, payload):
+        if messageNum in [6, 52]:
             return  # TODO consume these in authenticateBackend
 
-        if message_num == 98:
+        if messageNum == 98:
             # looking for RFC 4254 - 6.10. Returning Exit Status
             pointer = 4  # ignore recipient_channel
             leng, message = get_string(payload[pointer:])
@@ -145,11 +157,11 @@ class BackendSSHTransport(transport.SSHClientTransport, TimeoutMixin):
                 log.msg(f"exitCode: {exit_status}")
 
         if transport.SSHClientTransport.isEncrypted(self, "both"):
-            self.packet_buffer(message_num, payload)
+            self.packet_buffer(messageNum, payload)
         else:
-            transport.SSHClientTransport.dispatchMessage(self, message_num, payload)
+            transport.SSHClientTransport.dispatchMessage(self, messageNum, payload)
 
-    def packet_buffer(self, message_num, payload):
+    def packet_buffer(self, message_num: int, payload: bytes) -> None:
         """
         We can only proceed if authentication has been performed between client and proxy. Meanwhile we hold packets
         from the backend to the frontend in here.
@@ -157,21 +169,16 @@ class BackendSSHTransport(transport.SSHClientTransport, TimeoutMixin):
         if not self.factory.server.frontendAuthenticated:
             # wait till frontend connects and authenticates to send packets to them
             log.msg("Connection to client not ready, buffering packet from backend")
-            self.delayedPackets.append([message_num, payload])
+            self.delayedPackets.append((message_num, payload))
         else:
             if len(self.delayedPackets) > 0:
-                self.delayedPackets.append([message_num, payload])
+                self.delayedPackets.append((message_num, payload))
                 for packet in self.delayedPackets:
-                    self.factory.server.sshParse.parse_packet(
+                    self.factory.server.sshParse.parse_num_packet(
                         "[CLIENT]", packet[0], packet[1]
                     )
                 self.delayedPackets = []
             else:
-                self.factory.server.sshParse.parse_packet(
+                self.factory.server.sshParse.parse_num_packet(
                     "[CLIENT]", message_num, payload
                 )
-
-
-class BackendSSHFactory(protocol.ClientFactory):
-    def buildProtocol(self, addr):
-        return BackendSSHTransport(self)

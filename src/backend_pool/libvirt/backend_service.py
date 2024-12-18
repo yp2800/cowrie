@@ -1,17 +1,28 @@
+"""
+backend service
+"""
+
 # Copyright (c) 2019 Guilherme Borges <guilhermerosasborges@gmail.com>
 # See the COPYRIGHT file for more information
+
+from __future__ import annotations
+
 import os
 import random
 import sys
 import uuid
+from typing import TYPE_CHECKING
 
-import backend_pool.libvirt.guest_handler
-import backend_pool.libvirt.network_handler
-import backend_pool.util
+if TYPE_CHECKING:
+    from collections.abc import Callable
 
 from twisted.python import log
 
 from cowrie.core.config import CowrieConfig
+
+import backend_pool.libvirt.guest_handler
+import backend_pool.libvirt.network_handler
+import backend_pool.util
 
 
 class LibvirtError(Exception):
@@ -19,16 +30,22 @@ class LibvirtError(Exception):
 
 
 class LibvirtBackendService:
-    def __init__(self):
-        # lazy import to avoid exception if not using the backend_pool and libvirt not installed (#1185)
+    def __init__(self) -> None:
+        # lazy import to avoid exception if not using the backend_pool
+        # and libvirt not installed (#1185)
         import libvirt
 
+        libvirt_uri: str = CowrieConfig.get(
+            "backend_pool", "libvirt_uri", fallback="qemu:///system"
+        )
+
         # open connection to libvirt
-        self.conn = libvirt.open("qemu:///system")
+        self.conn = libvirt.open(libvirt_uri)
         if self.conn is None:
             log.msg(
-                eventid="cowrie.backend_pool.qemu",
-                format="Failed to open connection to qemu:///system",
+                eventid="cowrie.backend_pool.libvirtd",
+                format="Failed to open connection to libvirtd at %(uri)s",
+                uri=libvirt_uri,
             )
             raise LibvirtError()
 
@@ -36,19 +53,22 @@ class LibvirtBackendService:
         self.network = None
 
         # signals backend is ready to be operated
-        self.ready = False
+        self.ready: bool = False
 
         # table to associate IPs and MACs
-        seed = random.randint(0, sys.maxsize)
+        seed: int = random.randint(0, sys.maxsize)
         self.network_table = backend_pool.util.generate_network_table(seed)
 
         log.msg(
-            eventid="cowrie.backend_pool.qemu", format="Connection to Qemu established"
+            eventid="cowrie.backend_pool.libvirtd",
+            format="Connection to libvirtd established at %(uri)s",
+            uri=libvirt_uri,
         )
 
-    def start_backend(self):
+    def start_backend(self) -> None:
         """
-        Initialises Qemu/libvirt environment needed to run guests. Namely starts networks and network filters.
+        Initialises QEMU/libvirt environment needed to run guests.
+        Namely starts networks and network filters.
         """
         # create a network filter
         self.filter = backend_pool.libvirt.network_handler.create_filter(self.conn)
@@ -61,24 +81,25 @@ class LibvirtBackendService:
         # service is ready to be used (create guests and use them)
         self.ready = True
 
-    def stop_backend(self):
+    def stop_backend(self) -> None:
         log.msg(
-            eventid="cowrie.backend_pool.qemu", format="Doing Qemu clean shutdown..."
+            eventid="cowrie.backend_pool.libvirtd",
+            format="Doing libvirtd clean shutdown...",
         )
 
         self.ready = False
 
         self.destroy_all_cowrie()
 
-    def shutdown_backend(self):
+    def shutdown_backend(self) -> None:
         self.conn.close()  # close libvirt connection
 
         log.msg(
-            eventid="cowrie.backend_pool.qemu",
-            format="Connection to Qemu closed successfully",
+            eventid="cowrie.backend_pool.libvirtd",
+            format="Connection to libvirtd closed successfully",
         )
 
-    def get_mac_ip(self, ip_tester):
+    def get_mac_ip(self, ip_tester: Callable[[str], bool]) -> tuple[str, str]:
         """
         Get a MAC and IP that are not being used by any guest.
         """
@@ -110,7 +131,9 @@ class LibvirtBackendService:
             self.conn, guest_mac, guest_unique_id
         )
         if dom is None:
-            log.msg(eventid="cowrie.backend_pool.qemu", format="Failed to create guest")
+            log.msg(
+                eventid="cowrie.backend_pool.libvirtd", format="Failed to create guest"
+            )
             return None
 
         return dom, snapshot, guest_ip
@@ -120,7 +143,7 @@ class LibvirtBackendService:
             return
 
         try:
-            # destroy the domain in qemu
+            # destroy the domain in QEMU
             domain.destroy()
 
             # we want to remove the snapshot if either:
@@ -140,16 +163,17 @@ class LibvirtBackendService:
                 os.remove(snapshot)  # destroy its disk snapshot
         except Exception as error:
             log.err(
-                eventid="cowrie.backend_pool.qemu",
+                eventid="cowrie.backend_pool.libvirtd",
                 format="Error destroying guest: %(error)s",
                 error=error,
             )
 
-    def __destroy_all_guests(self):
+    def __destroy_all_guests(self) -> None:
         domains = self.conn.listDomainsID()
         if not domains:
             log.msg(
-                eventid="cowrie.backend_pool.qemu", format="Could not get domain list"
+                eventid="cowrie.backend_pool.libvirtd",
+                format="Could not get domain list",
             )
 
         for domain_id in domains:
@@ -160,11 +184,12 @@ class LibvirtBackendService:
                 except KeyboardInterrupt:
                     pass
 
-    def __destroy_all_networks(self):
+    def __destroy_all_networks(self) -> None:
         networks = self.conn.listNetworks()
         if not networks:
             log.msg(
-                eventid="cowrie.backend_pool.qemu", format="Could not get network list"
+                eventid="cowrie.backend_pool.libvirtd",
+                format="Could not get network list",
             )
 
         for network in networks:
@@ -172,11 +197,11 @@ class LibvirtBackendService:
                 n = self.conn.networkLookupByName(network)
                 n.destroy()
 
-    def __destroy_all_network_filters(self):
+    def __destroy_all_network_filters(self) -> None:
         network_filters = self.conn.listNWFilters()
         if not network_filters:
             log.msg(
-                eventid="cowrie.backend_pool.qemu",
+                eventid="cowrie.backend_pool.libvirtd",
                 format="Could not get network filters list",
             )
 
@@ -185,7 +210,7 @@ class LibvirtBackendService:
                 n = self.conn.nwfilterLookupByName(nw_filter)
                 n.undefine()
 
-    def destroy_all_cowrie(self):
+    def destroy_all_cowrie(self) -> None:
         self.__destroy_all_guests()
         self.__destroy_all_networks()
         self.__destroy_all_network_filters()

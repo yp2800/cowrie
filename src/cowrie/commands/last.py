@@ -2,6 +2,8 @@
 # See the COPYRIGHT file for more information
 
 
+from __future__ import annotations
+
 import time
 
 from cowrie.shell.command import HoneyPotCommand
@@ -9,8 +11,8 @@ from cowrie.shell.command import HoneyPotCommand
 commands = {}
 
 
-class command_last(HoneyPotCommand):
-    def call(self):
+class Command_last(HoneyPotCommand):
+    def call(self) -> None:
         line = list(self.args)
         while len(line):
             arg = line.pop(0)
@@ -20,8 +22,7 @@ class command_last(HoneyPotCommand):
                 line.pop(0)
 
         self.write(
-            "%-8s %-12s %-16s %s   still logged in\n"
-            % (
+            "{:8s} {:12s} {:16s} {}   still logged in\n".format(
                 self.protocol.user.username,
                 "pts/0",
                 self.protocol.clientIP,
@@ -33,15 +34,16 @@ class command_last(HoneyPotCommand):
 
         self.write("\n")
         self.write(
-            "wtmp begins %s\n"
-            % time.strftime(
-                "%a %b %d %H:%M:%S %Y",
-                time.localtime(
-                    self.protocol.logintime // (3600 * 24) * (3600 * 24) + 63
-                ),
+            "wtmp begins {}\n".format(
+                time.strftime(
+                    "%a %b %d %H:%M:%S %Y",
+                    time.localtime(
+                        self.protocol.logintime // (3600 * 24) * (3600 * 24) + 63
+                    ),
+                )
             )
         )
 
 
-commands["/usr/bin/last"] = command_last
-commands["last"] = command_last
+commands["/usr/bin/last"] = Command_last
+commands["last"] = Command_last

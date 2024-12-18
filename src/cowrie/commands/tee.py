@@ -4,11 +4,11 @@
 tee command
 
 """
+from __future__ import annotations
 
 
 import getopt
 import os
-from typing import List
 
 from twisted.python import log
 
@@ -18,17 +18,17 @@ from cowrie.shell.fs import FileNotFound
 commands = {}
 
 
-class command_tee(HoneyPotCommand):
+class Command_tee(HoneyPotCommand):
     """
     tee command
     """
 
     append = False
-    teeFiles: List[str] = []
+    teeFiles: list[str]
     writtenBytes = 0
     ignoreInterupts = False
 
-    def start(self):
+    def start(self) -> None:
         try:
             optlist, args = getopt.gnu_getopt(
                 self.args, "aip", ["help", "append", "version"]
@@ -40,7 +40,9 @@ class command_tee(HoneyPotCommand):
             self.exit()
             return
 
-        for o, a in optlist:
+        self.teeFiles = []
+
+        for o, _a in optlist:
             if o in ("--help"):
                 self.help()
                 self.exit()
@@ -52,51 +54,51 @@ class command_tee(HoneyPotCommand):
 
         for arg in args:
             pname = self.fs.resolve_path(arg, self.protocol.cwd)
-
             if self.fs.isdir(pname):
                 self.errorWrite(f"tee: {arg}: Is a directory\n")
                 continue
 
+            folder_path = os.path.dirname(pname)
+            fname = self.fs.resolve_path(folder_path, self.protocol.cwd)
+            if not self.fs.isdir(fname):
+                self.errorWrite(f"tee: {arg}: No such file or directory\n")
+                continue
+
             try:
-                pname = self.fs.resolve_path(arg, self.protocol.cwd)
-
-                folder_path = os.path.dirname(pname)
-
-                if not self.fs.exists(folder_path) or not self.fs.isdir(folder_path):
-                    raise FileNotFound
-
-                self.teeFiles.append(pname)
-                self.fs.mkfile(pname, 0, 0, 0, 0o644)
-
+                self.fs.mkfile(
+                    pname, self.protocol.user.uid, self.protocol.user.gid, 0, 0o644
+                )
             except FileNotFound:
                 self.errorWrite(f"tee: {arg}: No such file or directory\n")
+            else:
+                self.teeFiles.append(pname)
 
         if self.input_data:
             self.output(self.input_data)
             self.exit()
 
-    def write_to_file(self, data):
+    def write_to_file(self, data: bytes) -> None:
         self.writtenBytes += len(data)
         for outf in self.teeFiles:
             self.fs.update_size(outf, self.writtenBytes)
 
-    def output(self, input):
+    def output(self, inb: bytes | None) -> None:
         """
         This is the tee output, if no file supplied
         """
-        if "decode" in dir(input):
-            input = input.decode("UTF-8")
-        if not isinstance(input, str):
-            pass
+        if inb:
+            inp = inb.decode("utf-8")
+        else:
+            return
 
-        lines = input.split("\n")
+        lines = inp.split("\n")
         if lines[-1] == "":
             lines.pop()
         for line in lines:
             self.write(line + "\n")
-            self.write_to_file(line + "\n")
+            self.write_to_file(line.encode("utf-8") + b"\n")
 
-    def lineReceived(self, line):
+    def lineReceived(self, line: str) -> None:
         """
         This function logs standard input from the user send to tee
         """
@@ -107,21 +109,21 @@ class command_tee(HoneyPotCommand):
             format="INPUT (%(realm)s): %(input)s",
         )
 
-        self.output(line)
+        self.output(line.encode("utf-8"))
 
-    def handle_CTRL_C(self):
+    def handle_CTRL_C(self) -> None:
         if not self.ignoreInterupts:
             log.msg("Received CTRL-C, exiting..")
             self.write("^C\n")
             self.exit()
 
-    def handle_CTRL_D(self):
+    def handle_CTRL_D(self) -> None:
         """
         ctrl-d is end-of-file, time to terminate
         """
         self.exit()
 
-    def help(self):
+    def help(self) -> None:
         self.write(
             """Usage: tee [OPTION]... [FILE]...
 Copy standard input to each FILE, and also to standard output.
@@ -150,5 +152,5 @@ or available locally via: info '(coreutils) tee invocation'
         )
 
 
-commands["/bin/tee"] = command_tee
-commands["tee"] = command_tee
+commands["/bin/tee"] = Command_tee
+commands["tee"] = Command_tee
